@@ -1,307 +1,1047 @@
 {
-  "name": "CredResolve DCO Agent Workflow",
-  "description": "Hindi Debt Collection Officer — LangGraph + RAG + Voice pipeline",
-  "id": "credresolve-dco-v1",
+  "id": "credresolve-dco-v2",
+  "name": "CredResolve DCO Agent",
+  "description": "Hindi Debt Collection Officer — Input(Voice/Text/API) → Processing(RAG/Reasoning/Memory/Tools) → Output(Voice/Text/CRM/Tickets)",
+  "is_component": false,
   "data": {
     "nodes": [
       {
-        "id": "input_text",
+        "id": "ChatInput-text-001",
+        "type": "genericNode",
+        "position": { "x": 50, "y": 100 },
+        "data": {
+          "id": "ChatInput-text-001",
+          "type": "ChatInput",
+          "node": {
+            "display_name": "Text Input (Customer)",
+            "description": "Receives Hindi/Hinglish text from borrower via REST /chat or UI",
+            "documentation": "",
+            "base_classes": ["Message"],
+            "output_types": ["Message"],
+            "template": {
+              "input_value": {
+                "display_name": "Customer Message",
+                "value": "",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "info": "Hindi or Hinglish text from borrower"
+              },
+              "session_id": {
+                "display_name": "Session ID",
+                "value": "",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "info": "Thread ID for LangGraph checkpoint continuity"
+              },
+              "should_store_message": {
+                "display_name": "Store Message",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomComponent-sarvam-stt-001",
         "type": "genericNode",
         "position": { "x": 50, "y": 300 },
         "data": {
-          "type": "ChatInput",
-          "node": {
-            "template": {
-              "input_value": { "value": "", "type": "str", "display_name": "Customer Message (Hindi/Hinglish)" },
-              "should_store_message": { "value": true, "type": "bool" },
-              "session_id": { "value": "", "type": "str", "display_name": "Session ID" }
-            },
-            "description": "Receives text or transcribed voice from borrower",
-            "display_name": "Customer Input",
-            "base_classes": ["Message"]
-          }
-        }
-      },
-      {
-        "id": "input_voice",
-        "type": "genericNode",
-        "position": { "x": 50, "y": 150 },
-        "data": {
+          "id": "CustomComponent-sarvam-stt-001",
           "type": "CustomComponent",
           "node": {
+            "display_name": "Sarvam AI STT (Voice Input)",
+            "description": "Converts Hindi WAV/MP3 audio to text using Sarvam Saarika v2. Handles Hinglish code-switching and Indian accents.",
+            "documentation": "POST https://api.sarvam.ai/speech-to-text",
+            "base_classes": ["Message"],
+            "output_types": ["Message"],
             "template": {
-              "api_key": { "value": "", "type": "str", "display_name": "Sarvam API Key" },
-              "language": { "value": "hi-IN", "type": "str" }
-            },
-            "description": "Sarvam AI STT — converts Hindi voice to text",
-            "display_name": "Sarvam STT",
-            "base_classes": ["Message"]
+              "api_key": {
+                "display_name": "Sarvam API Key",
+                "value": "",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false,
+                "password": true
+              },
+              "model": {
+                "display_name": "STT Model",
+                "value": "saarika:v2",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["saarika:v1", "saarika:v2"]
+              },
+              "language_code": {
+                "display_name": "Language",
+                "value": "hi-IN",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "audio_input": {
+                "display_name": "Audio File (base64 or bytes)",
+                "value": "",
+                "type": "file",
+                "required": true,
+                "show": true,
+                "advanced": false,
+                "file_types": [".wav", ".mp3", ".webm"]
+              }
+            }
           }
         }
       },
       {
-        "id": "memory_retriever",
+        "id": "CustomComponent-api-webhook-001",
         "type": "genericNode",
-        "position": { "x": 300, "y": 200 },
+        "position": { "x": 50, "y": 500 },
         "data": {
-          "type": "ConversationBufferMemory",
-          "node": {
-            "template": {
-              "memory_key": { "value": "chat_history", "type": "str" },
-              "return_messages": { "value": true, "type": "bool" },
-              "input_key": { "value": "input", "type": "str" }
-            },
-            "description": "Maintains conversation context across turns",
-            "display_name": "Conversation Memory",
-            "base_classes": ["BaseMemory"]
-          }
-        }
-      },
-      {
-        "id": "user_memory_db",
-        "type": "genericNode",
-        "position": { "x": 300, "y": 350 },
-        "data": {
+          "id": "CustomComponent-api-webhook-001",
           "type": "CustomComponent",
           "node": {
+            "display_name": "API / IVR Webhook Input",
+            "description": "Receives programmatic input from IVR systems, WhatsApp Business API, or external integrations. Normalizes payload to standard Message format.",
+            "base_classes": ["Message"],
+            "output_types": ["Message"],
             "template": {
-              "db_path": { "value": "./credsolve_memory.db", "type": "str" },
-              "customer_id": { "value": "", "type": "str" }
-            },
-            "description": "SQLite user memory — loads prior interaction history",
+              "endpoint_path": {
+                "display_name": "Webhook Path",
+                "value": "/api/v1/dco/inbound",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "auth_token": {
+                "display_name": "Webhook Auth Token",
+                "value": "",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true,
+                "password": true
+              },
+              "loan_id_field": {
+                "display_name": "Loan ID Field Name",
+                "value": "loan_id",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "SQLiteMemory-user-001",
+        "type": "genericNode",
+        "position": { "x": 400, "y": 100 },
+        "data": {
+          "id": "SQLiteMemory-user-001",
+          "type": "CustomComponent",
+          "node": {
             "display_name": "User Memory (SQLite)",
-            "base_classes": ["str"]
-          }
-        }
-      },
-      {
-        "id": "crm_tool",
-        "type": "genericNode",
-        "position": { "x": 300, "y": 500 },
-        "data": {
-          "type": "Tool",
-          "node": {
+            "description": "Loads permanent cross-session user profile: preferred_language, risk_score, successful_ptps, broken_ptps, hardship_declared. Passes summary string to Context Prompt.",
+            "base_classes": ["str"],
+            "output_types": ["str"],
             "template": {
-              "name": { "value": "fetch_customer_data", "type": "str" },
-              "description": { "value": "Fetch customer loan data from CRM by loan_id", "type": "str" },
-              "return_direct": { "value": false, "type": "bool" }
-            },
-            "description": "CRM Tool — retrieves customer loan details",
-            "display_name": "CRM Tool",
-            "base_classes": ["Tool"]
+              "db_path": {
+                "display_name": "SQLite DB Path",
+                "value": "./credsolve_memory.db",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "customer_id": {
+                "display_name": "Customer ID",
+                "value": "",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "history_limit": {
+                "display_name": "History Records to Load",
+                "value": 5,
+                "type": "int",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       },
       {
-        "id": "payment_tool",
+        "id": "ConversationBufferWindowMemory-001",
         "type": "genericNode",
-        "position": { "x": 300, "y": 650 },
+        "position": { "x": 400, "y": 300 },
         "data": {
-          "type": "Tool",
+          "id": "ConversationBufferWindowMemory-001",
+          "type": "ConversationBufferWindowMemory",
           "node": {
+            "display_name": "Conversation Memory (In-Session)",
+            "description": "LangChain windowed conversation memory holding current session turns. Passed to prompt as {chat_history}. LangGraph SqliteSaver handles true persistence.",
+            "base_classes": ["BaseMemory"],
+            "output_types": ["BaseMemory"],
             "template": {
-              "name": { "value": "calculate_settlement_offer", "type": "str" },
-              "description": { "value": "Calculate settlement options and outstanding amount", "type": "str" }
-            },
-            "description": "Payment / Calculator Tool",
-            "display_name": "Payment Tool",
-            "base_classes": ["Tool"]
+              "k": {
+                "display_name": "Window Size (turns)",
+                "value": 10,
+                "type": "int",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "memory_key": {
+                "display_name": "Memory Key",
+                "value": "chat_history",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "return_messages": {
+                "display_name": "Return as Messages",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "input_key": {
+                "display_name": "Input Key",
+                "value": "input",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       },
       {
-        "id": "ticketing_tool",
+        "id": "HuggingFaceEmbeddings-001",
         "type": "genericNode",
-        "position": { "x": 300, "y": 800 },
+        "position": { "x": 400, "y": 500 },
         "data": {
-          "type": "Tool",
-          "node": {
-            "template": {
-              "name": { "value": "create_ticket", "type": "str" },
-              "description": { "value": "Create escalation or dispute tickets", "type": "str" }
-            },
-            "description": "Ticketing System Tool",
-            "display_name": "Ticketing Tool",
-            "base_classes": ["Tool"]
-          }
-        }
-      },
-      {
-        "id": "chroma_retriever",
-        "type": "genericNode",
-        "position": { "x": 600, "y": 400 },
-        "data": {
-          "type": "Chroma",
-          "node": {
-            "template": {
-              "collection_name": { "value": "credresolve_kb", "type": "str" },
-              "persist_directory": { "value": "./chroma_db", "type": "str" },
-              "search_type": { "value": "similarity", "type": "str" },
-              "number_of_results": { "value": 3, "type": "int" }
-            },
-            "description": "ChromaDB RAG retriever for policies and FAQs",
-            "display_name": "ChromaDB Retriever",
-            "base_classes": ["VectorStore", "BaseRetriever"]
-          }
-        }
-      },
-      {
-        "id": "embedding_model",
-        "type": "genericNode",
-        "position": { "x": 600, "y": 550 },
-        "data": {
+          "id": "HuggingFaceEmbeddings-001",
           "type": "HuggingFaceEmbeddings",
           "node": {
+            "display_name": "Hindi Embeddings (MiniLM)",
+            "description": "paraphrase-multilingual-MiniLM-L12-v2 — 384-dim vectors supporting Hindi, English and 50+ languages. Runs locally, no API key required.",
+            "base_classes": ["Embeddings"],
+            "output_types": ["Embeddings"],
             "template": {
-              "model_name": { "value": "paraphrase-multilingual-MiniLM-L12-v2", "type": "str" }
-            },
-            "description": "Multilingual embeddings (supports Hindi)",
-            "display_name": "Hindi Embeddings",
-            "base_classes": ["Embeddings"]
+              "model_name": {
+                "display_name": "Model Name",
+                "value": "paraphrase-multilingual-MiniLM-L12-v2",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "cache_folder": {
+                "display_name": "Model Cache Folder",
+                "value": "./model_cache",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       },
       {
-        "id": "system_prompt",
+        "id": "Chroma-retriever-001",
         "type": "genericNode",
-        "position": { "x": 600, "y": 200 },
+        "position": { "x": 700, "y": 400 },
         "data": {
+          "id": "Chroma-retriever-001",
+          "type": "Chroma",
+          "node": {
+            "display_name": "ChromaDB RAG Retriever",
+            "description": "Retrieves top-3 policy/FAQ chunks from 16-document knowledge base using cosine similarity. Relevance threshold: 0.3. Sources cited in response.",
+            "base_classes": ["VectorStore", "BaseRetriever"],
+            "output_types": ["Document"],
+            "template": {
+              "collection_name": {
+                "display_name": "Collection Name",
+                "value": "credresolve_kb",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "persist_directory": {
+                "display_name": "Persist Directory",
+                "value": "./chroma_db",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "search_type": {
+                "display_name": "Search Type",
+                "value": "similarity",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["similarity", "mmr"]
+              },
+              "number_of_results": {
+                "display_name": "Top K Results",
+                "value": 3,
+                "type": "int",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "score_threshold": {
+                "display_name": "Min Relevance Score",
+                "value": 0.3,
+                "type": "float",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "PromptTemplate-system-001",
+        "type": "genericNode",
+        "position": { "x": 700, "y": 150 },
+        "data": {
+          "id": "PromptTemplate-system-001",
           "type": "PromptTemplate",
           "node": {
+            "display_name": "DCO System + Context Prompt",
+            "description": "Combines Hindi system prompt (RBI compliance + Arya personality) with dynamic context: customer CRM data, RAG-retrieved policies, and SQLite memory summary.",
+            "base_classes": ["BasePromptTemplate"],
+            "output_types": ["BasePromptTemplate"],
             "template": {
-              "template": { "value": "आप CredResolve के एक विनम्र DCO हैं। RBI दिशानिर्देशों का पालन करें।\n\nग्राहक संदर्भ: {context}\nनीतियां: {policies}\nबातचीत: {chat_history}\n\nग्राहक: {input}\nआर्या:", "type": "str" },
-              "input_variables": { "value": ["context", "policies", "chat_history", "input"], "type": "list" }
-            },
-            "description": "Hindi system + context prompt for DCO agent",
-            "display_name": "DCO System Prompt",
-            "base_classes": ["BasePromptTemplate"]
+              "template": {
+                "display_name": "Prompt Template",
+                "value": "आप CredResolve के एक विनम्र DCO 'आर्या' हैं। RBI दिशानिर्देशों का पालन करें। धमकी, अपमान या दबाव न डालें।\n\n## ग्राहक\nनाम: {customer_name} | ऋण: {loan_id} | बकाया: ₹{outstanding} | DPD: {days_past_due}\nइतिहास: {memory_summary}\n\n## नीतियां (RAG)\n{policies}\n\n## बातचीत\n{chat_history}\n\nग्राहक: {input}\nआर्या:",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "input_variables": {
+                "display_name": "Input Variables",
+                "value": ["customer_name", "loan_id", "outstanding", "days_past_due", "memory_summary", "policies", "chat_history", "input"],
+                "type": "list",
+                "required": true,
+                "show": true,
+                "advanced": false
+              }
+            }
           }
         }
       },
       {
-        "id": "llm_gemini",
+        "id": "ChatGoogleGenerativeAI-001",
         "type": "genericNode",
-        "position": { "x": 900, "y": 300 },
+        "position": { "x": 1000, "y": 280 },
         "data": {
+          "id": "ChatGoogleGenerativeAI-001",
           "type": "ChatGoogleGenerativeAI",
           "node": {
+            "display_name": "Gemini 2.0 Flash (LLM)",
+            "description": "Primary LLM for intent classification, Hindi response generation, and evaluation. Free tier: 15 RPM, 1M TPM/day.",
+            "base_classes": ["BaseChatModel", "BaseLanguageModel"],
+            "output_types": ["BaseMessage"],
             "template": {
-              "model": { "value": "gemini-2.0-flash", "type": "str" },
-              "google_api_key": { "value": "", "type": "str", "password": true },
-              "max_output_tokens": { "value": 1024, "type": "int" },
-              "temperature": { "value": 0.3, "type": "float" }
-            },
-            "description": "Gemini 2.0 Flash — free tier (15 RPM, 1M TPM/day)",
-            "display_name": "Gemini LLM",
-            "base_classes": ["BaseLanguageModel", "BaseChatModel"]
+              "model": {
+                "display_name": "Model Name",
+                "value": "gemini-2.5-flash",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false,
+                "options": ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
+              },
+              "google_api_key": {
+                "display_name": "Google API Key",
+                "value": "",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false,
+                "password": true,
+                "info": "Get free key at https://aistudio.google.com/app/apikey"
+              },
+              "max_output_tokens": {
+                "display_name": "Max Output Tokens",
+                "value": 1024,
+                "type": "int",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "temperature": {
+                "display_name": "Temperature",
+                "value": 0.3,
+                "type": "float",
+                "required": false,
+                "show": true,
+                "advanced": false
+              }
+            }
           }
         }
       },
       {
-        "id": "agent_executor",
+        "id": "Tool-crm-fetch-001",
         "type": "genericNode",
-        "position": { "x": 900, "y": 500 },
+        "position": { "x": 700, "y": 620 },
         "data": {
-          "type": "AgentExecutor",
+          "id": "Tool-crm-fetch-001",
+          "type": "Tool",
           "node": {
+            "display_name": "CRM Tool — Fetch + PTP + Notes",
+            "description": "3 CRM operations: (1) fetch_customer_data: reads loan profile, outstanding, DPD, payment history. (2) log_ptp: WRITES Promise-to-Pay record with date and amount. (3) update_customer_notes: WRITES timestamped session note to CRM.",
+            "base_classes": ["Tool"],
+            "output_types": ["Tool"],
             "template": {
-              "max_iterations": { "value": 5, "type": "int" },
-              "handle_parsing_errors": { "value": true, "type": "bool" },
-              "verbose": { "value": true, "type": "bool" }
-            },
-            "description": "LangGraph-backed agent executor with tools",
-            "display_name": "DCO Agent Executor",
-            "base_classes": ["AgentExecutor"]
+              "name": {
+                "display_name": "Tool Name",
+                "value": "crm_tools",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "description": {
+                "display_name": "Description",
+                "value": "CRM: fetch customer data, log Promise-to-Pay, update call notes",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "crm_endpoint": {
+                "display_name": "CRM Base URL",
+                "value": "http://localhost:8000/internal/crm",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true,
+                "info": "For production: replace with Salesforce/Leadsquared API URL"
+              }
+            }
           }
         }
       },
       {
-        "id": "eval_prompt",
+        "id": "Tool-payment-001",
         "type": "genericNode",
-        "position": { "x": 1200, "y": 300 },
+        "position": { "x": 700, "y": 780 },
         "data": {
+          "id": "Tool-payment-001",
+          "type": "Tool",
+          "node": {
+            "display_name": "Payment Tool — Calculator + Verify",
+            "description": "4 payment operations: (1) calculate_outstanding: principal + 18% p.a. interest + 2% penalty. (2) calculate_settlement_offer: tiered discount (5%/10%/20%). (3) verify_payment: look up UTR/UPI in ledger. (4) get_payment_history: full transaction list.",
+            "base_classes": ["Tool"],
+            "output_types": ["Tool"],
+            "template": {
+              "name": {
+                "display_name": "Tool Name",
+                "value": "payment_tools",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "interest_rate_annual": {
+                "display_name": "Annual Interest Rate",
+                "value": 0.18,
+                "type": "float",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "Tool-ticketing-001",
+        "type": "genericNode",
+        "position": { "x": 700, "y": 940 },
+        "data": {
+          "id": "Tool-ticketing-001",
+          "type": "Tool",
+          "node": {
+            "display_name": "Ticketing Tool — Create + Update",
+            "description": "3 ticket operations: (1) create_ticket: WRITES new escalation/dispute/complaint ticket with priority and assignment. (2) update_ticket: WRITES status change and comment. (3) get_ticket: reads ticket by ID.",
+            "base_classes": ["Tool"],
+            "output_types": ["Tool"],
+            "template": {
+              "name": {
+                "display_name": "Tool Name",
+                "value": "ticketing_tools",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false
+              },
+              "default_assignee": {
+                "display_name": "Default Assignee",
+                "value": "senior_dco",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "ticketing_endpoint": {
+                "display_name": "Ticketing System URL",
+                "value": "http://localhost:8000/internal/tickets",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true,
+                "info": "For production: replace with Jira/Freshdesk/Zendesk API URL"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomComponent-langgraph-agent-001",
+        "type": "genericNode",
+        "position": { "x": 1000, "y": 600 },
+        "data": {
+          "id": "CustomComponent-langgraph-agent-001",
           "type": "CustomComponent",
           "node": {
+            "display_name": "LangGraph DCO Agent (10-State FSM)",
+            "description": "Core agent executor: GREETING→AUTHENTICATION→CONTEXT_GATHERING→DIAGNOSIS→TOOL_EXECUTION→KNOWLEDGE_RETRIEVAL→NEGOTIATION→RESOLUTION/ESCALATION→FOLLOW_UP. Uses SqliteSaver for state persistence across HTTP requests.",
+            "base_classes": ["AgentExecutor"],
+            "output_types": ["str", "dict"],
             "template": {
-              "check_hallucination": { "value": true, "type": "bool" },
-              "check_compliance": { "value": true, "type": "bool" }
-            },
-            "description": "Evaluation prompt — hallucination + compliance check",
-            "display_name": "Response Evaluator",
-            "base_classes": ["str"]
+              "max_iterations": {
+                "display_name": "Max Tool Iterations",
+                "value": 5,
+                "type": "int",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "checkpoint_db": {
+                "display_name": "Checkpoint DB Path",
+                "value": "./langgraph_checkpoints.db",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true
+              },
+              "handle_parsing_errors": {
+                "display_name": "Handle Parsing Errors",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": true
+              },
+              "verbose": {
+                "display_name": "Verbose Logging",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       },
       {
-        "id": "tts_output",
+        "id": "CustomComponent-eval-001",
         "type": "genericNode",
-        "position": { "x": 1500, "y": 200 },
+        "position": { "x": 1300, "y": 400 },
         "data": {
+          "id": "CustomComponent-eval-001",
           "type": "CustomComponent",
           "node": {
+            "display_name": "Response Evaluator (Hallucination + Compliance)",
+            "description": "Second Gemini call to validate agent response: checks hallucination vs RAG sources, RBI compliance, numeric accuracy, and tone. Returns corrected_response if overall_pass=false.",
+            "base_classes": ["str"],
+            "output_types": ["str"],
             "template": {
-              "api_key": { "value": "", "type": "str", "display_name": "Sarvam API Key" },
-              "speaker": { "value": "meera", "type": "str" },
-              "language": { "value": "hi-IN", "type": "str" }
-            },
-            "description": "Sarvam AI TTS — converts Hindi response to voice",
-            "display_name": "Sarvam TTS (Voice Out)",
-            "base_classes": ["bytes"]
+              "check_hallucination": {
+                "display_name": "Check Hallucination",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "check_rbi_compliance": {
+                "display_name": "Check RBI Compliance",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "check_numeric_accuracy": {
+                "display_name": "Check Numeric Accuracy",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "tone_threshold": {
+                "display_name": "Min Tone Score",
+                "value": 0.7,
+                "type": "float",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       },
       {
-        "id": "chat_output",
+        "id": "ChatOutput-text-001",
         "type": "genericNode",
-        "position": { "x": 1500, "y": 400 },
+        "position": { "x": 1600, "y": 150 },
         "data": {
+          "id": "ChatOutput-text-001",
           "type": "ChatOutput",
           "node": {
+            "display_name": "Text Response Output",
+            "description": "Delivers verified Hindi text response to customer via REST API response or WebSocket message.",
+            "base_classes": ["Message"],
+            "output_types": ["Message"],
             "template": {
-              "input_value": { "value": "", "type": "Message" },
-              "should_store_message": { "value": true, "type": "bool" }
-            },
-            "description": "Text output to customer interface",
-            "display_name": "Text Response",
-            "base_classes": ["Message"]
+              "input_value": {
+                "display_name": "Response Text",
+                "value": "",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "should_store_message": {
+                "display_name": "Store to Session",
+                "value": true,
+                "type": "bool",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       },
       {
-        "id": "metrics_logger",
+        "id": "CustomComponent-sarvam-tts-001",
         "type": "genericNode",
-        "position": { "x": 1500, "y": 600 },
+        "position": { "x": 1600, "y": 350 },
         "data": {
+          "id": "CustomComponent-sarvam-tts-001",
           "type": "CustomComponent",
           "node": {
+            "display_name": "Sarvam AI TTS (Voice Output)",
+            "description": "Converts Hindi text response to natural speech using Sarvam Bulbul v1 (speaker: meera). Returns base64 WAV audio. Falls back to ElevenLabs multilingual v2 for emotional escalation scenarios.",
+            "base_classes": ["bytes"],
+            "output_types": ["bytes"],
             "template": {
-              "prometheus_port": { "value": 9090, "type": "int" }
-            },
-            "description": "Prometheus metrics — latency, tokens, outcomes",
-            "display_name": "Observability Logger",
-            "base_classes": ["None"]
+              "api_key": {
+                "display_name": "Sarvam API Key",
+                "value": "",
+                "type": "str",
+                "required": true,
+                "show": true,
+                "advanced": false,
+                "password": true
+              },
+              "model": {
+                "display_name": "TTS Model",
+                "value": "bulbul:v1",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "speaker": {
+                "display_name": "Voice Speaker",
+                "value": "meera",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["meera", "arjun", "pavithra", "maitreyi"]
+              },
+              "pace": {
+                "display_name": "Speaking Pace",
+                "value": 1.0,
+                "type": "float",
+                "required": false,
+                "show": true,
+                "advanced": true
+              },
+              "language_code": {
+                "display_name": "Language",
+                "value": "hi-IN",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomComponent-crm-write-001",
+        "type": "genericNode",
+        "position": { "x": 1600, "y": 550 },
+        "data": {
+          "id": "CustomComponent-crm-write-001",
+          "type": "CustomComponent",
+          "node": {
+            "display_name": "CRM Write — PTP + Notes Update",
+            "description": "OUTPUT LAYER CRM writes: (1) log_ptp() — writes Promise-to-Pay to CRM with date, amount, PTP ID. Triggered by RESOLUTION node. (2) update_customer_notes() — appends timestamped session summary to CRM record. Triggered by FOLLOW_UP node.",
+            "base_classes": ["dict"],
+            "output_types": ["dict"],
+            "template": {
+              "write_mode": {
+                "display_name": "Write Mode",
+                "value": "ptp_and_notes",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["ptp_only", "notes_only", "ptp_and_notes"]
+              },
+              "ptp_date": {
+                "display_name": "PTP Date (YYYY-MM-DD)",
+                "value": "",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "ptp_amount": {
+                "display_name": "PTP Amount (INR)",
+                "value": 0,
+                "type": "float",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "session_note": {
+                "display_name": "Session Note",
+                "value": "",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "info": "Auto-populated: Intent | Outcome | PTP date"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomComponent-ticket-write-001",
+        "type": "genericNode",
+        "position": { "x": 1600, "y": 750 },
+        "data": {
+          "id": "CustomComponent-ticket-write-001",
+          "type": "CustomComponent",
+          "node": {
+            "display_name": "Ticketing Write — Create Escalation",
+            "description": "OUTPUT LAYER ticket write: create_ticket() — triggered by ESCALATION node when angry/high-risk/auth-fail/3-round-limit. Creates ticket with priority=high, assigned_to=senior_dco. Returns ticket_id shown to customer.",
+            "base_classes": ["dict"],
+            "output_types": ["dict"],
+            "template": {
+              "category": {
+                "display_name": "Ticket Category",
+                "value": "escalation",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["escalation", "dispute", "complaint", "callback"]
+              },
+              "priority": {
+                "display_name": "Priority",
+                "value": "high",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["low", "medium", "high", "critical"]
+              },
+              "assigned_to": {
+                "display_name": "Assigned To",
+                "value": "senior_dco",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomComponent-sms-write-001",
+        "type": "genericNode",
+        "position": { "x": 1600, "y": 950 },
+        "data": {
+          "id": "CustomComponent-sms-write-001",
+          "type": "CustomComponent",
+          "node": {
+            "display_name": "SMS / WhatsApp Output",
+            "description": "Sends DLT-registered Hindi SMS after RESOLUTION (PTP confirmation, settlement offer). Also sends WhatsApp message via Business API. Template variables: {name}, {loan_id}, {amount}, {date}, {ptp_id}.",
+            "base_classes": ["dict"],
+            "output_types": ["dict"],
+            "template": {
+              "channel": {
+                "display_name": "Channel",
+                "value": "sms",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["sms", "whatsapp", "both"]
+              },
+              "template_id": {
+                "display_name": "SMS Template",
+                "value": "ptp_confirmation",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": false,
+                "options": ["ptp_confirmation", "settlement_offer", "callback_scheduled"]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomComponent-prometheus-001",
+        "type": "genericNode",
+        "position": { "x": 1600, "y": 1150 },
+        "data": {
+          "id": "CustomComponent-prometheus-001",
+          "type": "CustomComponent",
+          "node": {
+            "display_name": "Prometheus Metrics Logger",
+            "description": "Records 15 metrics after every conversation: dco_conversations_total, dco_llm_latency_ms, dco_token_usage_total, dco_resolution_outcome_total, dco_escalations_total, dco_rag_latency_ms, dco_hallucination_total, dco_tool_calls_total, dco_state_transitions_total.",
+            "base_classes": [],
+            "output_types": [],
+            "template": {
+              "prometheus_port": {
+                "display_name": "Prometheus Port",
+                "value": 9090,
+                "type": "int",
+                "required": false,
+                "show": true,
+                "advanced": false
+              },
+              "metrics_path": {
+                "display_name": "Metrics Path",
+                "value": "/metrics",
+                "type": "str",
+                "required": false,
+                "show": true,
+                "advanced": true
+              }
+            }
           }
         }
       }
     ],
     "edges": [
-      { "id": "e1", "source": "input_voice", "target": "input_text", "data": { "label": "transcript" } },
-      { "id": "e2", "source": "input_text", "target": "agent_executor", "data": { "label": "user_message" } },
-      { "id": "e3", "source": "memory_retriever", "target": "system_prompt", "data": { "label": "chat_history" } },
-      { "id": "e4", "source": "user_memory_db", "target": "system_prompt", "data": { "label": "user_context" } },
-      { "id": "e5", "source": "chroma_retriever", "target": "system_prompt", "data": { "label": "policies" } },
-      { "id": "e6", "source": "embedding_model", "target": "chroma_retriever", "data": { "label": "embeddings" } },
-      { "id": "e7", "source": "crm_tool", "target": "agent_executor", "data": { "label": "tool" } },
-      { "id": "e8", "source": "payment_tool", "target": "agent_executor", "data": { "label": "tool" } },
-      { "id": "e9", "source": "ticketing_tool", "target": "agent_executor", "data": { "label": "tool" } },
-      { "id": "e10", "source": "system_prompt", "target": "agent_executor", "data": { "label": "prompt" } },
-      { "id": "e11", "source": "llm_gemini", "target": "agent_executor", "data": { "label": "llm" } },
-      { "id": "e12", "source": "agent_executor", "target": "eval_prompt", "data": { "label": "raw_response" } },
-      { "id": "e13", "source": "eval_prompt", "target": "tts_output", "data": { "label": "verified_response" } },
-      { "id": "e14", "source": "eval_prompt", "target": "chat_output", "data": { "label": "verified_response" } },
-      { "id": "e15", "source": "agent_executor", "target": "metrics_logger", "data": { "label": "metrics" } },
-      { "id": "e16", "source": "agent_executor", "target": "memory_retriever", "data": { "label": "update_memory" } }
+      {
+        "id": "e-stt-to-agent",
+        "source": "CustomComponent-sarvam-stt-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "Message",
+        "targetHandle": "input",
+        "label": "Hindi transcript"
+      },
+      {
+        "id": "e-text-to-agent",
+        "source": "ChatInput-text-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "Message",
+        "targetHandle": "input",
+        "label": "customer text"
+      },
+      {
+        "id": "e-api-to-agent",
+        "source": "CustomComponent-api-webhook-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "Message",
+        "targetHandle": "input",
+        "label": "IVR / API payload"
+      },
+      {
+        "id": "e-usermem-to-prompt",
+        "source": "SQLiteMemory-user-001",
+        "target": "PromptTemplate-system-001",
+        "sourceHandle": "str",
+        "targetHandle": "memory_summary",
+        "label": "user history"
+      },
+      {
+        "id": "e-convmem-to-prompt",
+        "source": "ConversationBufferWindowMemory-001",
+        "target": "PromptTemplate-system-001",
+        "sourceHandle": "BaseMemory",
+        "targetHandle": "chat_history",
+        "label": "session history"
+      },
+      {
+        "id": "e-embed-to-chroma",
+        "source": "HuggingFaceEmbeddings-001",
+        "target": "Chroma-retriever-001",
+        "sourceHandle": "Embeddings",
+        "targetHandle": "embeddings",
+        "label": "Hindi vectors"
+      },
+      {
+        "id": "e-chroma-to-prompt",
+        "source": "Chroma-retriever-001",
+        "target": "PromptTemplate-system-001",
+        "sourceHandle": "Document",
+        "targetHandle": "policies",
+        "label": "retrieved policies"
+      },
+      {
+        "id": "e-prompt-to-agent",
+        "source": "PromptTemplate-system-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "BasePromptTemplate",
+        "targetHandle": "prompt",
+        "label": "constructed prompt"
+      },
+      {
+        "id": "e-llm-to-agent",
+        "source": "ChatGoogleGenerativeAI-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "BaseMessage",
+        "targetHandle": "llm",
+        "label": "Gemini 2.0 Flash"
+      },
+      {
+        "id": "e-crm-tool-to-agent",
+        "source": "Tool-crm-fetch-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "Tool",
+        "targetHandle": "tools",
+        "label": "CRM tool"
+      },
+      {
+        "id": "e-pay-tool-to-agent",
+        "source": "Tool-payment-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "Tool",
+        "targetHandle": "tools",
+        "label": "payment tool"
+      },
+      {
+        "id": "e-tkt-tool-to-agent",
+        "source": "Tool-ticketing-001",
+        "target": "CustomComponent-langgraph-agent-001",
+        "sourceHandle": "Tool",
+        "targetHandle": "tools",
+        "label": "ticketing tool"
+      },
+      {
+        "id": "e-agent-to-eval",
+        "source": "CustomComponent-langgraph-agent-001",
+        "target": "CustomComponent-eval-001",
+        "sourceHandle": "str",
+        "targetHandle": "raw_response",
+        "label": "raw response"
+      },
+      {
+        "id": "e-agent-to-mem",
+        "source": "CustomComponent-langgraph-agent-001",
+        "target": "ConversationBufferWindowMemory-001",
+        "sourceHandle": "dict",
+        "targetHandle": "messages",
+        "label": "update session memory"
+      },
+      {
+        "id": "e-eval-to-text",
+        "source": "CustomComponent-eval-001",
+        "target": "ChatOutput-text-001",
+        "sourceHandle": "str",
+        "targetHandle": "input_value",
+        "label": "verified response"
+      },
+      {
+        "id": "e-eval-to-tts",
+        "source": "CustomComponent-eval-001",
+        "target": "CustomComponent-sarvam-tts-001",
+        "sourceHandle": "str",
+        "targetHandle": "text",
+        "label": "verified response"
+      },
+      {
+        "id": "e-agent-to-crm",
+        "source": "CustomComponent-langgraph-agent-001",
+        "target": "CustomComponent-crm-write-001",
+        "sourceHandle": "dict",
+        "targetHandle": "resolution_data",
+        "label": "PTP + notes"
+      },
+      {
+        "id": "e-agent-to-ticket",
+        "source": "CustomComponent-langgraph-agent-001",
+        "target": "CustomComponent-ticket-write-001",
+        "sourceHandle": "dict",
+        "targetHandle": "escalation_data",
+        "label": "escalation data"
+      },
+      {
+        "id": "e-agent-to-sms",
+        "source": "CustomComponent-langgraph-agent-001",
+        "target": "CustomComponent-sms-write-001",
+        "sourceHandle": "dict",
+        "targetHandle": "sms_data",
+        "label": "SMS trigger"
+      },
+      {
+        "id": "e-agent-to-metrics",
+        "source": "CustomComponent-langgraph-agent-001",
+        "target": "CustomComponent-prometheus-001",
+        "sourceHandle": "dict",
+        "targetHandle": "metrics_data",
+        "label": "metrics"
+      }
     ],
-    "viewport": { "x": 0, "y": 0, "zoom": 0.7 }
+    "viewport": { "x": -20, "y": -20, "zoom": 0.6 }
   }
 }

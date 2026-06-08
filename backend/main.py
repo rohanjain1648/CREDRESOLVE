@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from backend.agent.graph import get_graph
 from backend.agent.state_machine import ConversationState
+from backend.agent.multi_agent.supervisor import run_multi_agent
 from backend.rag.knowledge_base import build_knowledge_base
 from backend.memory.user_memory import init_db, get_interaction_history, build_memory_summary
 from backend.memory.conversation_memory import init_session_db, create_session, close_session
@@ -176,6 +177,67 @@ async def metrics():
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": "CredResolve DCO", "version": "1.0.0"}
+
+
+# ── Part 10: Multi-Agent endpoint ─────────────────────────────────────────────
+
+class MultiAgentChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    loan_id: Optional[str] = None
+    language: str = "hi"
+
+
+class MultiAgentChatResponse(BaseModel):
+    session_id: str
+    final_response: str
+    intent: str
+    evaluation_passed: bool
+    hallucination_detected: bool
+    compliance_violation: bool
+    accuracy_score: float
+    tone_score: float
+    ptp_id: str
+    ticket_id: str
+    agent_trace: list  # full agent-to-agent communication log
+
+
+@app.post("/multi-agent/chat", response_model=MultiAgentChatResponse)
+async def multi_agent_chat(req: MultiAgentChatRequest):
+    """
+    Part 10 — Multi-Agent endpoint.
+    Routes through: ContextAgent → RetrievalAgent → DecisionAgent
+                    → ExecutionAgent → QAAgent
+    Returns the full agent-to-agent communication trace alongside
+    the validated Hindi response.
+    """
+    session_id = req.session_id or str(uuid.uuid4())
+    ACTIVE_SESSIONS.inc()
+    start = time.time()
+
+    result = run_multi_agent(
+        customer_message=req.message,
+        session_id=session_id,
+        loan_id=req.loan_id or "",
+        language=req.language,
+    )
+
+    CONVERSATION_DURATION.observe(time.time() - start)
+    ACTIVE_SESSIONS.dec()
+
+    return MultiAgentChatResponse(
+        session_id=session_id,
+        final_response=result["final_response"],
+        intent=result["intent"],
+        evaluation_passed=result["evaluation_passed"],
+        hallucination_detected=result["hallucination_detected"],
+        compliance_violation=result["compliance_violation"],
+        accuracy_score=result["accuracy_score"],
+        tone_score=result["tone_score"],
+        ptp_id=result["ptp_id"],
+        ticket_id=result["ticket_id"],
+        agent_trace=result["agent_trace"],
+    )
 
 
 # ── WebSocket — Real-time streaming conversation ──────────────────────────────

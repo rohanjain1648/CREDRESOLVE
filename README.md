@@ -1,7 +1,7 @@
 # CredResolve DCO Agent
 
 > **An end-to-end agentic AI system** — Hindi Debt Collection Officer powered by  
-> LangGraph · ChromaDB RAG · Sarvam AI Voice · Gemini 2.0 Flash · FastAPI · Prometheus
+> LangGraph · Multi-Agent Supervisor · ChromaDB RAG · Sarvam AI Voice · Gemini 2.5 Flash · FastAPI · Prometheus
 
 ---
 
@@ -19,14 +19,15 @@
 10. [Part 7 — Memory & Context Persistence](#10-part-7--memory--context-persistence)
 11. [Part 8 — Observability & Monitoring](#11-part-8--observability--monitoring)
 12. [Part 9 — Hindi Debt Collection Use Case](#12-part-9--hindi-debt-collection-use-case)
-13. [Project Structure](#13-project-structure)
-14. [Setup & Installation](#14-setup--installation)
-15. [API Reference](#15-api-reference)
-16. [Docker Deployment](#16-docker-deployment)
-17. [LangFlow Import Guide](#17-langflow-import-guide)
-18. [Free Gemini Tier Limits](#18-free-gemini-tier-limits)
-19. [Evaluation Criteria Mapping](#19-evaluation-criteria-mapping)
-20. [Troubleshooting](#20-troubleshooting)
+13. [Part 10 — Multi-Agent System (Bonus)](#13-part-10--multi-agent-system-bonus)
+14. [Project Structure](#14-project-structure)
+15. [Setup & Installation](#15-setup--installation)
+16. [API Reference](#16-api-reference)
+17. [Docker Deployment](#17-docker-deployment)
+18. [LangFlow Import Guide](#18-langflow-import-guide)
+19. [Free Gemini Tier Limits](#19-free-gemini-tier-limits)
+20. [Evaluation Criteria Mapping](#20-evaluation-criteria-mapping)
+21. [Troubleshooting](#21-troubleshooting)
 
 ---
 
@@ -43,6 +44,7 @@ CredResolve DCO Agent is a **production-ready, multi-step agentic AI system** th
 - **Speaks and listens in Hindi** via Sarvam AI (India's best Hindi voice AI)
 - **Logs all activity** to Prometheus metrics for business and technical monitoring
 - **Complies with RBI Fair Practices Code** — never harasses, always escalates when needed
+- **Runs as a 5-specialist multi-agent system** (Bonus) — Context → Retrieval → Decision → Execution → QA agents, each with a narrow role and full agent-to-agent trace
 
 ---
 
@@ -52,7 +54,7 @@ CredResolve DCO Agent is a **production-ready, multi-step agentic AI system** th
 |-------|-----------|---------|------------------|
 | **Agent Framework** | LangGraph | ≥0.1.0 | Native finite state machine with Python code nodes, SQLite checkpointing, and conditional edge routing. Chosen over plain LangChain agents because it gives explicit control over state transitions — critical for compliance-heavy debt collection workflows. |
 | **Workflow Orchestration** | LangFlow | ≥1.0.0 | Visual drag-and-drop workflow builder that exports/imports JSON. Used to visualise the pipeline for non-technical stakeholders. LangFlow is preferred over n8n here because it is Python-native and integrates directly with LangChain components. |
-| **LLM** | Gemini 2.0 Flash | gemini-2.0-flash | Google's free-tier model — 15 RPM, 1 million tokens/day at $0. Excellent Hindi reasoning and JSON-structured output. Chosen over OpenAI/Claude for zero cost during development and demo. |
+| **LLM** | Gemini 2.5 Flash | gemini-2.5-flash | Google's free-tier model (GA June 2026) — thinking capabilities, excellent Hindi reasoning and JSON-structured output. Chosen over OpenAI/Claude for zero cost during development and demo. |
 | **RAG / Vector Store** | ChromaDB | ≥0.5.0 | Embedded vector database — runs fully on-disk, no server required. Ideal for a demo that must work locally. Stores policy documents and FAQs with cosine similarity search. |
 | **Embeddings** | paraphrase-multilingual-MiniLM-L12-v2 | sentence-transformers | Supports Hindi natively — encodes Devanagari text into meaningful vectors. Free and runs locally with no API calls. |
 | **Voice STT** | Sarvam AI — Saarika v2 | API | India's purpose-built Hindi STT model. Outperforms Whisper on Hindi/Hinglish because it was trained on Indian speech data including accented Hindi and code-switching. |
@@ -810,13 +812,127 @@ Does NOT argue, press for payment, or continue negotiation.
 
 ---
 
-## 13. Project Structure
+## 13. Part 10 — Multi-Agent System (Bonus)
+
+The bonus challenge implements a **5-specialist-agent architecture** where each agent has one narrow responsibility. A pure-Python LangGraph Supervisor routes between agents by reading `state.next_agent` after every node — no LLM routing call needed.
+
+### Agent Responsibilities
+
+| Agent | States Handled | Key Inputs | Key Outputs |
+|-------|---------------|-----------|------------|
+| **ContextAgent** | GREETING · AUTH · CONTEXT_GATHERING | `loan_id`, raw message | `authenticated`, `customer_data`, `memory_summary` |
+| **RetrievalAgent** | KNOWLEDGE_RETRIEVAL | `intent` from DecisionAgent | `retrieved_policies` (top-3, cosine ≥ 0.3) |
+| **DecisionAgent** | DIAGNOSIS (phase A) + NEGOTIATION (phase B) | customer data + policies | `intent`, `proposed_amount`, `proposed_date`, `negotiation_response` |
+| **ExecutionAgent** | TOOL_EXECUTION · RESOLUTION · ESCALATION | intent + proposed values | `ptp_id`, `ticket_id`, `sms_sent`, `tool_results` |
+| **QAAgent** | FOLLOW_UP (eval + session close) | raw response + tool results | `final_response`, `evaluation_passed`, eval scores |
+
+### Agent-to-Agent Flow
+
+```mermaid
+flowchart TD
+    START([Customer Message]) --> CA
+
+    subgraph MA["Multi-Agent Orchestration (LangGraph Supervisor)"]
+        CA["ContextAgent\nAuth + CRM + SQLite memory"]
+        RA["RetrievalAgent\nChromaDB RAG top-3"]
+        DA_A["DecisionAgent Phase A\nIntent Diagnosis via Gemini"]
+        DA_B["DecisionAgent Phase B\nHindi Negotiation via Gemini"]
+        EA["ExecutionAgent\nlog_ptp / create_ticket / SMS"]
+        QA["QAAgent\nHallucination + RBI compliance check"]
+    end
+
+    CA -->|"handoff: Auth OK LOAN001 45DPD"| DA_A
+    DA_A -->|"handoff: intent=delay conf=0.92"| RA
+    RA -->|"handoff: 3 chunks POL-003 POL-002 FAQ-001"| DA_B
+    DA_B -->|"handoff: proposed ₹87500 by 2026-06-20"| EA
+    EA -->|"handoff: PTP20260608001 + SMS sent"| QA
+    QA --> END([final_response + full agent_trace])
+
+    style CA fill:#0d3b66,color:#fff
+    style RA fill:#4a2000,color:#fff
+    style DA_A fill:#4B0082,color:#fff
+    style DA_B fill:#4B0082,color:#fff
+    style EA fill:#006400,color:#fff
+    style QA fill:#8B0000,color:#fff
+```
+
+### Agent-to-Agent Communication Bus
+
+Every agent appends one `AgentMessage` to the shared `state.agent_messages` list. The `/multi-agent/chat` endpoint returns the entire trace alongside the final response:
+
+```json
+{
+  "final_response": "Rajesh ji, ₹87,500 ka PTP 20 tarikh tak confirm hua...",
+  "intent": "delay",
+  "evaluation_passed": true,
+  "ptp_id": "PTP20260608001",
+  "ticket_id": "",
+  "agent_trace": [
+    {
+      "agent": "context", "role": "handoff",
+      "content": "Authenticated: Rajesh Kumar | Loan: LOAN001 | DPD: 45 | Outstanding: ₹87500",
+      "metadata": {"next": "decision", "dpd": 45, "latency_ms": 312}
+    },
+    {
+      "agent": "decision", "role": "handoff",
+      "content": "DIAGNOSIS → intent='delay' confidence=0.92 → handing off to RetrievalAgent",
+      "metadata": {"next": "retrieval", "intent": "delay", "confidence": 0.92}
+    },
+    {
+      "agent": "retrieval", "role": "handoff",
+      "content": "Retrieved 3/3 chunks above threshold 0.3. Sources: POL-003, POL-002, FAQ-001",
+      "metadata": {"next": "decision", "results_above_threshold": 3, "latency_ms": 87}
+    },
+    {
+      "agent": "decision", "role": "handoff",
+      "content": "NEGOTIATION round 1: proposed ₹87500 by 2026-06-20. Escalate=False → execution",
+      "metadata": {"next": "execution", "proposed_amount": 87500, "proposed_date": "2026-06-20"}
+    },
+    {
+      "agent": "execution", "role": "handoff",
+      "content": "3 tools: calculate_outstanding → ₹89850 | log_ptp → PTP20260608001 | send_sms → +91-9876543210",
+      "metadata": {"next": "qa", "ptp_id": "PTP20260608001", "sms_sent": true, "latency_ms": 156}
+    },
+    {
+      "agent": "qa", "role": "handoff",
+      "content": "QA: PASS | hallucination=False | compliance_ok=True | accuracy=0.97 | tone=0.89",
+      "metadata": {"next": "__end__", "overall_pass": true, "accuracy_score": 0.97, "tone_score": 0.89}
+    }
+  ]
+}
+```
+
+### Multi-Agent Files
+
+| File | Responsibility |
+|------|---------------|
+| [backend/agent/multi_agent/state.py](backend/agent/multi_agent/state.py) | `MultiAgentState` TypedDict + `AgentMessage` communication bus |
+| [backend/agent/multi_agent/context_agent.py](backend/agent/multi_agent/context_agent.py) | Greeting, CRM auth, SQLite memory load |
+| [backend/agent/multi_agent/retrieval_agent.py](backend/agent/multi_agent/retrieval_agent.py) | ChromaDB cosine search, relevance filtering |
+| [backend/agent/multi_agent/decision_agent.py](backend/agent/multi_agent/decision_agent.py) | Gemini intent diagnosis + Hindi negotiation (2-phase) |
+| [backend/agent/multi_agent/execution_agent.py](backend/agent/multi_agent/execution_agent.py) | CRM writes, ticket creation, SMS dispatch |
+| [backend/agent/multi_agent/qa_agent.py](backend/agent/multi_agent/qa_agent.py) | Hallucination + RBI compliance eval, session close |
+| [backend/agent/multi_agent/supervisor.py](backend/agent/multi_agent/supervisor.py) | LangGraph graph construction + deterministic Supervisor router |
+
+### Quick Test
+
+```bash
+curl -X POST http://localhost:8000/multi-agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "LOAN001", "language": "hi"}'
+
+# Returns: final_response + agent_trace showing every handoff
+```
+
+---
+
+## 14. Project Structure
 
 ```
 credsolve/
 │
 ├── backend/
-│   ├── main.py                       ← FastAPI app: /chat, /voice, /ws, /metrics, /health
+│   ├── main.py                       ← FastAPI app: /chat, /multi-agent/chat, /voice, /ws, /metrics, /health
 │   ├── config.py                     ← Pydantic settings (reads .env)
 │   │
 │   ├── agent/
@@ -824,8 +940,16 @@ credsolve/
 │   │   │                               STATE_TRANSITIONS documentation dict
 │   │   ├── graph.py                  ← build_graph(): nodes + edges + routing functions
 │   │   │                               get_graph(): singleton with SqliteSaver
-│   │   └── nodes.py                  ← 10 node functions (greeting → follow_up)
-│   │                                   _get_llm() → ChatGoogleGenerativeAI(gemini-2.0-flash)
+│   │   ├── nodes.py                  ← 10 node functions (greeting → follow_up)
+│   │   │                               _get_llm() → ChatGoogleGenerativeAI(gemini-2.5-flash)
+│   │   └── multi_agent/              ← Part 10: 5-specialist agent system
+│   │       ├── state.py              ← MultiAgentState TypedDict + AgentMessage bus
+│   │       ├── context_agent.py      ← GREETING · AUTH · CONTEXT_GATHERING
+│   │       ├── retrieval_agent.py    ← KNOWLEDGE_RETRIEVAL (ChromaDB)
+│   │       ├── decision_agent.py     ← DIAGNOSIS (phase A) + NEGOTIATION (phase B)
+│   │       ├── execution_agent.py    ← TOOL_EXECUTION · RESOLUTION · ESCALATION
+│   │       ├── qa_agent.py           ← Hallucination + compliance eval + session close
+│   │       └── supervisor.py         ← LangGraph graph + Supervisor router + run_multi_agent()
 │   │
 │   ├── tools/
 │   │   ├── crm_tool.py               ← fetch_customer_data · log_ptp · update_customer_notes
@@ -883,7 +1007,7 @@ credsolve/
 
 ---
 
-## 14. Setup & Installation
+## 15. Setup & Installation
 
 ### Prerequisites
 - Python 3.11+
@@ -944,7 +1068,7 @@ curl -X POST http://localhost:8000/chat \
 
 ---
 
-## 15. API Reference
+## 16. API Reference
 
 ### `POST /chat`
 
@@ -969,6 +1093,19 @@ curl -X POST http://localhost:8000/chat \
 }
 ```
 
+### `POST /multi-agent/chat` *(Part 10 — Bonus)*
+
+| Field | Type | Required | Description |
+|-------|------|---------|-------------|
+| `message` | string | ✅ | Customer's Hindi text or Loan ID |
+| `session_id` | string | ❌ | Omit for new session |
+| `loan_id` | string | ❌ | Pre-populate for IVR flows |
+| `language` | string | ❌ | `"hi"` (default) |
+
+**Response** includes `final_response`, evaluation scores, `ptp_id`/`ticket_id`, and the full `agent_trace` array showing every agent handoff with content + metadata.
+
+---
+
 ### `POST /voice/transcribe`
 - Body: `multipart/form-data` with `audio` file (WAV/MP3) and `language` (default `hi-IN`)
 - Returns: `{"transcript": "मुझे...", "language": "hi-IN"}`
@@ -987,7 +1124,7 @@ Returns cross-session memory summary + last 10 interactions for the memory demo.
 
 ---
 
-## 16. Docker Deployment
+## 17. Docker Deployment
 
 ```bash
 # 1. Configure
@@ -1018,7 +1155,7 @@ docker-compose down
 
 ---
 
-## 17. LangFlow Import Guide
+## 18. LangFlow Import Guide
 
 ```bash
 pip install langflow
@@ -1029,7 +1166,7 @@ langflow run
 # Folder icon (top-left) → "Upload a flow" → select langflow/workflow.json
 
 # What you can do in the UI:
-# - Swap gemini-2.0-flash for gemini-2.5-pro in the LLM node
+# - Swap gemini-2.5-flash for gemini-2.5-pro in the LLM node
 # - Edit the system prompt directly without touching code
 # - Test individual nodes in isolation
 # - Add new tool nodes by dragging from the component panel
@@ -1038,15 +1175,15 @@ langflow run
 
 ---
 
-## 18. Free Gemini Tier Limits
+## 19. Free Gemini Tier Limits
 
 Get your free key at **https://aistudio.google.com/app/apikey** — no billing required.
 
 | Model | Free RPM | Free TPM | Free RPD | Recommended For |
 |-------|---------|---------|---------|----------------|
-| `gemini-2.0-flash` | 15 | 1,000,000 | 1,500 | **Default — fast, generous, full Hindi support** |
-| `gemini-2.5-flash` | 10 | 250,000 | 500 | Stronger reasoning, lower throughput |
-| `gemini-2.5-pro` | 5 | 250,000 | 25 | Hardest negotiation scenarios only |
+| `gemini-2.5-flash-lite` | 30 | 1,000,000 | 1,500 | **Fastest + cheapest — high-volume / low-latency calls** |
+| `gemini-2.5-flash` | 15 | 1,000,000 | 1,500 | **Default — best price/performance + thinking capabilities** |
+| `gemini-2.5-pro` | 5 | 250,000 | 25 | Hardest negotiation / complex reasoning scenarios only |
 
 To switch model, edit one line in [backend/agent/nodes.py](backend/agent/nodes.py):
 ```python
@@ -1055,7 +1192,7 @@ return ChatGoogleGenerativeAI(model="gemini-2.5-flash", ...)
 
 ---
 
-## 19. Evaluation Criteria Mapping
+## 20. Evaluation Criteria Mapping
 
 | Area | Weight | Key Files | Evidence |
 |------|--------|-----------|---------|
@@ -1068,15 +1205,16 @@ return ChatGoogleGenerativeAI(model="gemini-2.5-flash", ...)
 | **Memory & Context** | 10% | `memory/*.py`, `agent/graph.py` | 3-layer memory: in-context + LangGraph checkpoint + SQLite cross-session profiles |
 | **Observability** | 5% | `monitoring/metrics.py`, `monitoring/prometheus.yml` | 15 Prometheus metrics; Grafana stack in docker-compose |
 | **Production Readiness** | 10% | `Dockerfile`, `docker-compose.yml`, `main.py` | Multi-service Docker; async FastAPI; health endpoint; graceful startup with lifespan |
+| **Bonus: Multi-Agent** | +bonus | `agent/multi_agent/` (7 files), `main.py` | 5 specialist agents; deterministic Supervisor; `AgentMessage` communication bus; full trace in API response; `AGENT_HANDOFFS` Prometheus metric |
 
 ---
 
-## 20. Troubleshooting
+## 21. Troubleshooting
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | `chromadb` import error | Missing build tools | `pip install chromadb --upgrade` |
-| Gemini 429 rate limit | Free tier: 15 RPM | Switch to `gemini-2.5-flash` or add delay between calls |
+| Gemini 429 rate limit | Free tier RPM exceeded | Switch to `gemini-2.5-flash-lite` (30 RPM) or add delay between calls |
 | Embedding model slow download | First run only | `python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"` |
 | State not persisting | `session_id` missing | Always pass `session_id` from first response back in subsequent requests |
 | Sarvam AI 401 | Wrong header name | Header must be `"api-subscription-key"`, not `Authorization: Bearer` |

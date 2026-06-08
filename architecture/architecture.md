@@ -228,7 +228,8 @@ flowchart TD
 |-------|-----------|---------|------|
 | Agent Framework | LangGraph | ≥0.1.0 | 10-state FSM + SQLite checkpointing |
 | Orchestration | LangFlow | ≥1.0.0 | Visual workflow builder + JSON export |
-| LLM | Gemini 2.0 Flash | gemini-2.0-flash | Reasoning + Hindi generation (free tier) |
+| LLM | Gemini 2.5 Flash | gemini-2.5-flash | Reasoning + Hindi generation + thinking (free tier, GA June 2026) |
+| LLM (lite) | Gemini 2.5 Flash-Lite | gemini-2.5-flash-lite | Low-latency fast responses, minimal cost |
 | Vector Store | ChromaDB | ≥0.5.0 | Persistent cosine similarity search |
 | Embeddings | MiniLM-L12-v2 | sentence-transformers | Multilingual Hindi-capable embeddings |
 | Voice STT | Sarvam Saarika v2 | API | Hindi speech-to-text |

@@ -38,7 +38,7 @@ settings = get_settings()
 
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         google_api_key=settings.google_api_key,
         max_output_tokens=1024,
         temperature=0.3,
@@ -59,7 +59,7 @@ def _call_llm(messages: list, system: str = None) -> tuple[str, dict]:
     usage = getattr(response, "usage_metadata", {}) or {}
     input_tokens = usage.get("input_tokens", 0)
     output_tokens = usage.get("output_tokens", 0)
-    record_llm_call("gemini-2.0-flash", input_tokens, output_tokens, latency)
+    record_llm_call("gemini-2.5-flash", input_tokens, output_tokens, latency)
 
     return response.content, {"input_tokens": input_tokens, "output_tokens": output_tokens, "latency_ms": latency}
 

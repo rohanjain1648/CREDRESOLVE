@@ -1,0 +1,693 @@
+id: credresolve-dco-v2
+name: CredResolve DCO Agent
+description: >
+  Hindi Debt Collection Officer workflow.
+  Input Layer  : Voice (Sarvam STT) / Text (REST) / IVR Webhook
+  Processing   : LangGraph 10-state FSM, Gemini 2.0 Flash, ChromaDB RAG,
+                 SQLite memory, CRM/Payment/Ticketing LangChain tools
+  Output Layer : Text response, Sarvam TTS voice, CRM write (PTP + notes),
+                 Escalation ticket, SMS/WhatsApp, Prometheus metrics
+is_component: false
+
+# ════════════════════════════════════════════════════
+# INPUT LAYER
+# ════════════════════════════════════════════════════
+nodes:
+
+  - id: ChatInput-text-001
+    type: ChatInput
+    display_name: "Text Input (Customer)"
+    layer: input
+    position: {x: 50, y: 100}
+    template:
+      input_value:
+        display_name: Customer Message
+        type: str
+        value: ""
+        info: "Hindi or Hinglish text from borrower"
+      session_id:
+        display_name: Session ID
+        type: str
+        value: ""
+        info: "Thread ID for LangGraph SqliteSaver continuity"
+      should_store_message:
+        type: bool
+        value: true
+        advanced: true
+
+  - id: CustomComponent-sarvam-stt-001
+    type: CustomComponent
+    display_name: "Sarvam AI STT (Voice Input)"
+    layer: input
+    position: {x: 50, y: 300}
+    description: >
+      Converts Hindi WAV/MP3/WebM audio to text using Sarvam Saarika v2.
+      Handles Hinglish code-switching and Indian regional accents.
+      API: POST https://api.sarvam.ai/speech-to-text
+    template:
+      api_key:
+        display_name: Sarvam API Key
+        type: str
+        password: true
+        required: true
+      model:
+        display_name: STT Model
+        type: str
+        value: "saarika:v2"
+        options: ["saarika:v1", "saarika:v2"]
+      language_code:
+        type: str
+        value: "hi-IN"
+      audio_input:
+        display_name: Audio File
+        type: file
+        file_types: [".wav", ".mp3", ".webm"]
+        required: true
+
+  - id: CustomComponent-api-webhook-001
+    type: CustomComponent
+    display_name: "API / IVR Webhook Input"
+    layer: input
+    position: {x: 50, y: 500}
+    description: >
+      Receives programmatic input from IVR systems, WhatsApp Business API,
+      or external integrations. Normalizes all payloads to Message format.
+    template:
+      endpoint_path:
+        type: str
+        value: "/api/v1/dco/inbound"
+      auth_token:
+        type: str
+        password: true
+        advanced: true
+      loan_id_field:
+        type: str
+        value: "loan_id"
+
+# ════════════════════════════════════════════════════
+# PROCESSING LAYER — Memory
+# ════════════════════════════════════════════════════
+
+  - id: SQLiteMemory-user-001
+    type: CustomComponent
+    display_name: "User Memory (SQLite)"
+    layer: processing
+    position: {x: 400, y: 100}
+    description: >
+      Loads permanent cross-session user profile from SQLite:
+      preferred_language, risk_score, successful_ptps, broken_ptps,
+      hardship_declared. Builds Hindi summary string for context prompt.
+    template:
+      db_path:
+        type: str
+        value: "./credsolve_memory.db"
+        required: true
+      customer_id:
+        type: str
+        value: ""
+        required: true
+      history_limit:
+        type: int
+        value: 5
+        advanced: true
+
+  - id: ConversationBufferWindowMemory-001
+    type: ConversationBufferWindowMemory
+    display_name: "Conversation Memory (In-Session)"
+    layer: processing
+    position: {x: 400, y: 300}
+    description: >
+      LangChain windowed memory for the current call session (k=10 turns).
+      Passed to prompt as {chat_history}.
+      LangGraph SqliteSaver handles persistence across HTTP requests.
+    template:
+      k:
+        display_name: Window Size (turns)
+        type: int
+        value: 10
+      memory_key:
+        type: str
+        value: "chat_history"
+      return_messages:
+        type: bool
+        value: true
+      input_key:
+        type: str
+        value: "input"
+        advanced: true
+
+# ════════════════════════════════════════════════════
+# PROCESSING LAYER — RAG
+# ════════════════════════════════════════════════════
+
+  - id: HuggingFaceEmbeddings-001
+    type: HuggingFaceEmbeddings
+    display_name: "Hindi Embeddings (MiniLM)"
+    layer: processing
+    position: {x: 400, y: 500}
+    description: >
+      paraphrase-multilingual-MiniLM-L12-v2 — 384-dim multilingual vectors.
+      Supports Hindi Devanagari natively. Runs locally, zero API cost.
+    template:
+      model_name:
+        type: str
+        value: "paraphrase-multilingual-MiniLM-L12-v2"
+        required: true
+      cache_folder:
+        type: str
+        value: "./model_cache"
+        advanced: true
+
+  - id: Chroma-retriever-001
+    type: Chroma
+    display_name: "ChromaDB RAG Retriever"
+    layer: processing
+    position: {x: 700, y: 400}
+    description: >
+      Retrieves top-3 policy/FAQ chunks from 16-document knowledge base
+      (policies.json + faqs.json) using cosine similarity.
+      Relevance threshold: 0.3. Source IDs cited in agent response.
+    template:
+      collection_name:
+        type: str
+        value: "credresolve_kb"
+        required: true
+      persist_directory:
+        type: str
+        value: "./chroma_db"
+      search_type:
+        type: str
+        value: "similarity"
+        options: ["similarity", "mmr"]
+      number_of_results:
+        display_name: Top K
+        type: int
+        value: 3
+      score_threshold:
+        display_name: Min Relevance Score
+        type: float
+        value: 0.3
+        advanced: true
+
+# ════════════════════════════════════════════════════
+# PROCESSING LAYER — Prompt + LLM
+# ════════════════════════════════════════════════════
+
+  - id: PromptTemplate-system-001
+    type: PromptTemplate
+    display_name: "DCO System + Context Prompt"
+    layer: processing
+    position: {x: 700, y: 150}
+    description: >
+      Combines Hindi system prompt (RBI compliance + Arya DCO personality)
+      with dynamic context: CRM customer data, RAG policy chunks, SQLite
+      memory summary, and conversation history.
+    template:
+      template:
+        type: str
+        value: |
+          आप CredResolve के एक विनम्र DCO 'आर्या' हैं। RBI दिशानिर्देशों का पालन करें।
+          धमकी, अपमान या दबाव न डालें।
+
+          ## ग्राहक
+          नाम: {customer_name} | ऋण: {loan_id} | बकाया: ₹{outstanding} | DPD: {days_past_due}
+          इतिहास: {memory_summary}
+
+          ## नीतियां (RAG)
+          {policies}
+
+          ## बातचीत
+          {chat_history}
+
+          ग्राहक: {input}
+          आर्या:
+      input_variables:
+        type: list
+        value:
+          - customer_name
+          - loan_id
+          - outstanding
+          - days_past_due
+          - memory_summary
+          - policies
+          - chat_history
+          - input
+
+  - id: ChatGoogleGenerativeAI-001
+    type: ChatGoogleGenerativeAI
+    display_name: "Gemini 2.0 Flash (LLM)"
+    layer: processing
+    position: {x: 1000, y: 280}
+    description: >
+      Primary LLM for all reasoning: intent classification (JSON),
+      Hindi negotiation response generation, and hallucination evaluation.
+      Free tier: 15 RPM, 1M TPM/day via Google AI Studio.
+    template:
+      model:
+        type: str
+        value: "gemini-2.5-flash"
+        options: ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
+        required: true
+      google_api_key:
+        type: str
+        password: true
+        required: true
+        info: "Free key at https://aistudio.google.com/app/apikey"
+      max_output_tokens:
+        type: int
+        value: 1024
+      temperature:
+        type: float
+        value: 0.3
+
+# ════════════════════════════════════════════════════
+# PROCESSING LAYER — Tools
+# ════════════════════════════════════════════════════
+
+  - id: Tool-crm-fetch-001
+    type: Tool
+    display_name: "CRM Tool — Fetch + PTP + Notes"
+    layer: processing
+    position: {x: 700, y: 620}
+    description: >
+      3 LangChain @tool functions wired to CRM:
+        fetch_customer_data(loan_id)      — READ:  loan profile, DPD, payment history
+        log_ptp(loan_id, date, amount)    — WRITE: Promise-to-Pay record → returns ptp_id
+        update_customer_notes(loan_id, n) — WRITE: timestamped call note to CRM record
+    template:
+      name:
+        type: str
+        value: "crm_tools"
+      description:
+        type: str
+        value: "CRM: fetch customer data, log Promise-to-Pay, update call notes"
+      crm_endpoint:
+        type: str
+        value: "http://localhost:8000/internal/crm"
+        advanced: true
+        info: "Production: replace with Salesforce/Leadsquared API URL"
+
+  - id: Tool-payment-001
+    type: Tool
+    display_name: "Payment Tool — Calculator + Verify"
+    layer: processing
+    position: {x: 700, y: 780}
+    description: >
+      4 LangChain @tool functions:
+        calculate_outstanding(loan_id, dpd, principal) — principal + 18% p.a. + 2% penalty
+        calculate_settlement_offer(loan_id, outstanding, dpd) — tiered: 5%/10%/20% waiver
+        verify_payment(loan_id, txn_id)  — look up UTR/UPI reference in ledger
+        get_payment_history(loan_id)     — full transaction list
+    template:
+      name:
+        type: str
+        value: "payment_tools"
+      interest_rate_annual:
+        type: float
+        value: 0.18
+        advanced: true
+
+  - id: Tool-ticketing-001
+    type: Tool
+    display_name: "Ticketing Tool — Create + Update"
+    layer: processing
+    position: {x: 700, y: 940}
+    description: >
+      3 LangChain @tool functions:
+        create_ticket(loan_id, category, priority, description, assigned_to)
+          — WRITE: new escalation/dispute ticket → returns ticket_id
+        update_ticket(ticket_id, status, comment) — WRITE: status update
+        get_ticket(ticket_id) — READ: ticket details
+    template:
+      name:
+        type: str
+        value: "ticketing_tools"
+      default_assignee:
+        type: str
+        value: "senior_dco"
+      ticketing_endpoint:
+        type: str
+        value: "http://localhost:8000/internal/tickets"
+        advanced: true
+        info: "Production: replace with Jira/Freshdesk/Zendesk API URL"
+
+  - id: CustomComponent-langgraph-agent-001
+    type: CustomComponent
+    display_name: "LangGraph DCO Agent (10-State FSM)"
+    layer: processing
+    position: {x: 1000, y: 600}
+    description: >
+      Core agent executor implementing the 10-state finite state machine:
+        GREETING → AUTHENTICATION → CONTEXT_GATHERING → DIAGNOSIS
+        → TOOL_EXECUTION → KNOWLEDGE_RETRIEVAL → NEGOTIATION
+        → RESOLUTION / ESCALATION → FOLLOW_UP → END
+      Uses SqliteSaver(./langgraph_checkpoints.db) keyed by session_id
+      so state survives across stateless HTTP requests.
+    template:
+      max_iterations:
+        display_name: Max Tool Iterations
+        type: int
+        value: 5
+      checkpoint_db:
+        type: str
+        value: "./langgraph_checkpoints.db"
+        advanced: true
+      handle_parsing_errors:
+        type: bool
+        value: true
+        advanced: true
+      verbose:
+        type: bool
+        value: true
+        advanced: true
+
+  - id: CustomComponent-eval-001
+    type: CustomComponent
+    display_name: "Response Evaluator (Hallucination + Compliance)"
+    layer: processing
+    position: {x: 1300, y: 400}
+    description: >
+      Second Gemini 2.0 Flash call after every response.
+      Checks: hallucination vs RAG source documents, RBI Fair Practices
+      compliance, numeric accuracy (amounts/dates), tone score >= 0.7.
+      Returns corrected_response if overall_pass = false.
+    template:
+      check_hallucination:
+        type: bool
+        value: true
+      check_rbi_compliance:
+        type: bool
+        value: true
+      check_numeric_accuracy:
+        type: bool
+        value: true
+      tone_threshold:
+        type: float
+        value: 0.7
+        advanced: true
+
+# ════════════════════════════════════════════════════
+# OUTPUT LAYER
+# ════════════════════════════════════════════════════
+
+  - id: ChatOutput-text-001
+    type: ChatOutput
+    display_name: "Text Response Output"
+    layer: output
+    position: {x: 1600, y: 150}
+    description: >
+      Delivers the evaluation-validated Hindi text response to the customer
+      via the FastAPI REST response body or WebSocket /ws/{session_id}.
+    template:
+      input_value:
+        type: str
+        value: ""
+      should_store_message:
+        type: bool
+        value: true
+        advanced: true
+
+  - id: CustomComponent-sarvam-tts-001
+    type: CustomComponent
+    display_name: "Sarvam AI TTS (Voice Output)"
+    layer: output
+    position: {x: 1600, y: 350}
+    description: >
+      Converts verified Hindi text to natural Indian-accent speech via
+      Sarvam Bulbul v1 (speaker: meera). Returns base64-encoded WAV audio.
+      Falls back to ElevenLabs eleven_multilingual_v2 for emotional tones.
+      Splits at 500 chars to respect Sarvam API limits.
+    template:
+      api_key:
+        type: str
+        password: true
+        required: true
+      model:
+        type: str
+        value: "bulbul:v1"
+      speaker:
+        type: str
+        value: "meera"
+        options: ["meera", "arjun", "pavithra", "maitreyi"]
+      pace:
+        type: float
+        value: 1.0
+        advanced: true
+      language_code:
+        type: str
+        value: "hi-IN"
+
+  - id: CustomComponent-crm-write-001
+    type: CustomComponent
+    display_name: "CRM Write — PTP + Notes"
+    layer: output
+    position: {x: 1600, y: 550}
+    description: >
+      OUTPUT LAYER CRM write operations triggered by the LangGraph FSM:
+        RESOLUTION node  → log_ptp(loan_id, ptp_date, ptp_amount)
+                           writes PTP record, returns ptp_id e.g. "PTP20240606001"
+        FOLLOW_UP node   → update_customer_notes(loan_id, note)
+                           appends timestamped session summary to CRM record
+      Source: backend/tools/crm_tool.py — log_ptp (line ~70), update_customer_notes (line ~90)
+    template:
+      write_mode:
+        type: str
+        value: "ptp_and_notes"
+        options: ["ptp_only", "notes_only", "ptp_and_notes"]
+      ptp_date:
+        display_name: PTP Date (YYYY-MM-DD)
+        type: str
+        value: ""
+      ptp_amount:
+        display_name: PTP Amount (INR)
+        type: float
+        value: 0
+      session_note:
+        type: str
+        value: ""
+        info: "Auto-populated: Intent | Outcome | PTP date"
+
+  - id: CustomComponent-ticket-write-001
+    type: CustomComponent
+    display_name: "Ticketing Write — Create Escalation"
+    layer: output
+    position: {x: 1600, y: 750}
+    description: >
+      OUTPUT LAYER ticket write triggered when FSM enters ESCALATION state:
+        Triggers: intent=angry, auth_failed, DPD>90+refusal, negotiation rounds>=3
+        create_ticket(loan_id, category="escalation", priority="high",
+                      description=..., assigned_to="senior_dco")
+        Returns ticket_id which is read out to the customer in Hindi.
+      Source: backend/tools/ticketing_tool.py — create_ticket (line ~30)
+              Called from: backend/agent/nodes.py — escalation_node (line ~355)
+    template:
+      category:
+        type: str
+        value: "escalation"
+        options: ["escalation", "dispute", "complaint", "callback"]
+      priority:
+        type: str
+        value: "high"
+        options: ["low", "medium", "high", "critical"]
+      assigned_to:
+        type: str
+        value: "senior_dco"
+
+  - id: CustomComponent-sms-write-001
+    type: CustomComponent
+    display_name: "SMS / WhatsApp Output"
+    layer: output
+    position: {x: 1600, y: 950}
+    description: >
+      Sends DLT-registered Hindi SMS after RESOLUTION (ptp_confirmation)
+      or ESCALATION (callback_scheduled). Also triggers WhatsApp Business API.
+      Templates in backend/tools/communication_tool.py — SMS_TEMPLATES dict.
+      Variables: {name}, {loan_id}, {amount}, {date}, {ptp_id}.
+    template:
+      channel:
+        type: str
+        value: "sms"
+        options: ["sms", "whatsapp", "both"]
+      template_id:
+        type: str
+        value: "ptp_confirmation"
+        options: ["ptp_confirmation", "settlement_offer", "callback_scheduled"]
+
+  - id: CustomComponent-prometheus-001
+    type: CustomComponent
+    display_name: "Prometheus Metrics Logger"
+    layer: output
+    position: {x: 1600, y: 1150}
+    description: >
+      Records 15 Prometheus metrics at GET /metrics after every conversation.
+      Key metrics: dco_conversations_total, dco_llm_latency_ms,
+      dco_token_usage_total, dco_resolution_outcome_total,
+      dco_escalations_total, dco_rag_latency_ms, dco_hallucination_total,
+      dco_tool_calls_total, dco_state_transitions_total.
+      Source: backend/monitoring/metrics.py
+    template:
+      prometheus_port:
+        type: int
+        value: 9090
+      metrics_path:
+        type: str
+        value: "/metrics"
+        advanced: true
+
+# ════════════════════════════════════════════════════
+# EDGES (data flow)
+# ════════════════════════════════════════════════════
+edges:
+
+  # --- Input Layer → Agent ---
+  - id: e-stt-to-agent
+    source: CustomComponent-sarvam-stt-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: Message
+    targetHandle: input
+    label: "Hindi transcript (Saarika v2 STT)"
+
+  - id: e-text-to-agent
+    source: ChatInput-text-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: Message
+    targetHandle: input
+    label: "Customer text message"
+
+  - id: e-api-to-agent
+    source: CustomComponent-api-webhook-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: Message
+    targetHandle: input
+    label: "IVR / API webhook payload"
+
+  # --- Memory → Prompt ---
+  - id: e-usermem-to-prompt
+    source: SQLiteMemory-user-001
+    target: PromptTemplate-system-001
+    sourceHandle: str
+    targetHandle: memory_summary
+    label: "Cross-session user history"
+
+  - id: e-convmem-to-prompt
+    source: ConversationBufferWindowMemory-001
+    target: PromptTemplate-system-001
+    sourceHandle: BaseMemory
+    targetHandle: chat_history
+    label: "In-session conversation"
+
+  # --- RAG → Prompt ---
+  - id: e-embed-to-chroma
+    source: HuggingFaceEmbeddings-001
+    target: Chroma-retriever-001
+    sourceHandle: Embeddings
+    targetHandle: embeddings
+    label: "384-dim Hindi vectors"
+
+  - id: e-chroma-to-prompt
+    source: Chroma-retriever-001
+    target: PromptTemplate-system-001
+    sourceHandle: Document
+    targetHandle: policies
+    label: "Top-3 policy chunks"
+
+  # --- Prompt + LLM + Tools → Agent ---
+  - id: e-prompt-to-agent
+    source: PromptTemplate-system-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: BasePromptTemplate
+    targetHandle: prompt
+    label: "Constructed system+context prompt"
+
+  - id: e-llm-to-agent
+    source: ChatGoogleGenerativeAI-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: BaseMessage
+    targetHandle: llm
+    label: "Gemini 2.0 Flash reasoning engine"
+
+  - id: e-crm-tool-to-agent
+    source: Tool-crm-fetch-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: Tool
+    targetHandle: tools
+    label: "CRM tool (fetch/ptp/notes)"
+
+  - id: e-pay-tool-to-agent
+    source: Tool-payment-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: Tool
+    targetHandle: tools
+    label: "Payment calculator tool"
+
+  - id: e-tkt-tool-to-agent
+    source: Tool-ticketing-001
+    target: CustomComponent-langgraph-agent-001
+    sourceHandle: Tool
+    targetHandle: tools
+    label: "Ticket creation tool"
+
+  # --- Agent → Evaluator ---
+  - id: e-agent-to-eval
+    source: CustomComponent-langgraph-agent-001
+    target: CustomComponent-eval-001
+    sourceHandle: str
+    targetHandle: raw_response
+    label: "Raw Hindi response (pre-validation)"
+
+  # --- Agent feedback loop → Memory ---
+  - id: e-agent-to-mem
+    source: CustomComponent-langgraph-agent-001
+    target: ConversationBufferWindowMemory-001
+    sourceHandle: dict
+    targetHandle: messages
+    label: "Update session conversation memory"
+
+  # --- Evaluator → Output Layer ---
+  - id: e-eval-to-text
+    source: CustomComponent-eval-001
+    target: ChatOutput-text-001
+    sourceHandle: str
+    targetHandle: input_value
+    label: "Validated Hindi text response"
+
+  - id: e-eval-to-tts
+    source: CustomComponent-eval-001
+    target: CustomComponent-sarvam-tts-001
+    sourceHandle: str
+    targetHandle: text
+    label: "Validated text → Bulbul v1 speech"
+
+  # --- Agent → CRM/Ticket/SMS output writes ---
+  - id: e-agent-to-crm
+    source: CustomComponent-langgraph-agent-001
+    target: CustomComponent-crm-write-001
+    sourceHandle: dict
+    targetHandle: resolution_data
+    label: "PTP data + session note → CRM WRITE"
+
+  - id: e-agent-to-ticket
+    source: CustomComponent-langgraph-agent-001
+    target: CustomComponent-ticket-write-001
+    sourceHandle: dict
+    targetHandle: escalation_data
+    label: "Escalation trigger → Ticket WRITE"
+
+  - id: e-agent-to-sms
+    source: CustomComponent-langgraph-agent-001
+    target: CustomComponent-sms-write-001
+    sourceHandle: dict
+    targetHandle: sms_data
+    label: "PTP confirmed → Hindi SMS"
+
+  - id: e-agent-to-metrics
+    source: CustomComponent-langgraph-agent-001
+    target: CustomComponent-prometheus-001
+    sourceHandle: dict
+    targetHandle: metrics_data
+    label: "15 Prometheus metrics"
+
+viewport:
+  x: -20
+  y: -20
+  zoom: 0.6
