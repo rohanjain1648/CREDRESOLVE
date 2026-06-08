@@ -1,0 +1,307 @@
+{
+  "name": "CredResolve DCO Agent Workflow",
+  "description": "Hindi Debt Collection Officer — LangGraph + RAG + Voice pipeline",
+  "id": "credresolve-dco-v1",
+  "data": {
+    "nodes": [
+      {
+        "id": "input_text",
+        "type": "genericNode",
+        "position": { "x": 50, "y": 300 },
+        "data": {
+          "type": "ChatInput",
+          "node": {
+            "template": {
+              "input_value": { "value": "", "type": "str", "display_name": "Customer Message (Hindi/Hinglish)" },
+              "should_store_message": { "value": true, "type": "bool" },
+              "session_id": { "value": "", "type": "str", "display_name": "Session ID" }
+            },
+            "description": "Receives text or transcribed voice from borrower",
+            "display_name": "Customer Input",
+            "base_classes": ["Message"]
+          }
+        }
+      },
+      {
+        "id": "input_voice",
+        "type": "genericNode",
+        "position": { "x": 50, "y": 150 },
+        "data": {
+          "type": "CustomComponent",
+          "node": {
+            "template": {
+              "api_key": { "value": "", "type": "str", "display_name": "Sarvam API Key" },
+              "language": { "value": "hi-IN", "type": "str" }
+            },
+            "description": "Sarvam AI STT — converts Hindi voice to text",
+            "display_name": "Sarvam STT",
+            "base_classes": ["Message"]
+          }
+        }
+      },
+      {
+        "id": "memory_retriever",
+        "type": "genericNode",
+        "position": { "x": 300, "y": 200 },
+        "data": {
+          "type": "ConversationBufferMemory",
+          "node": {
+            "template": {
+              "memory_key": { "value": "chat_history", "type": "str" },
+              "return_messages": { "value": true, "type": "bool" },
+              "input_key": { "value": "input", "type": "str" }
+            },
+            "description": "Maintains conversation context across turns",
+            "display_name": "Conversation Memory",
+            "base_classes": ["BaseMemory"]
+          }
+        }
+      },
+      {
+        "id": "user_memory_db",
+        "type": "genericNode",
+        "position": { "x": 300, "y": 350 },
+        "data": {
+          "type": "CustomComponent",
+          "node": {
+            "template": {
+              "db_path": { "value": "./credsolve_memory.db", "type": "str" },
+              "customer_id": { "value": "", "type": "str" }
+            },
+            "description": "SQLite user memory — loads prior interaction history",
+            "display_name": "User Memory (SQLite)",
+            "base_classes": ["str"]
+          }
+        }
+      },
+      {
+        "id": "crm_tool",
+        "type": "genericNode",
+        "position": { "x": 300, "y": 500 },
+        "data": {
+          "type": "Tool",
+          "node": {
+            "template": {
+              "name": { "value": "fetch_customer_data", "type": "str" },
+              "description": { "value": "Fetch customer loan data from CRM by loan_id", "type": "str" },
+              "return_direct": { "value": false, "type": "bool" }
+            },
+            "description": "CRM Tool — retrieves customer loan details",
+            "display_name": "CRM Tool",
+            "base_classes": ["Tool"]
+          }
+        }
+      },
+      {
+        "id": "payment_tool",
+        "type": "genericNode",
+        "position": { "x": 300, "y": 650 },
+        "data": {
+          "type": "Tool",
+          "node": {
+            "template": {
+              "name": { "value": "calculate_settlement_offer", "type": "str" },
+              "description": { "value": "Calculate settlement options and outstanding amount", "type": "str" }
+            },
+            "description": "Payment / Calculator Tool",
+            "display_name": "Payment Tool",
+            "base_classes": ["Tool"]
+          }
+        }
+      },
+      {
+        "id": "ticketing_tool",
+        "type": "genericNode",
+        "position": { "x": 300, "y": 800 },
+        "data": {
+          "type": "Tool",
+          "node": {
+            "template": {
+              "name": { "value": "create_ticket", "type": "str" },
+              "description": { "value": "Create escalation or dispute tickets", "type": "str" }
+            },
+            "description": "Ticketing System Tool",
+            "display_name": "Ticketing Tool",
+            "base_classes": ["Tool"]
+          }
+        }
+      },
+      {
+        "id": "chroma_retriever",
+        "type": "genericNode",
+        "position": { "x": 600, "y": 400 },
+        "data": {
+          "type": "Chroma",
+          "node": {
+            "template": {
+              "collection_name": { "value": "credresolve_kb", "type": "str" },
+              "persist_directory": { "value": "./chroma_db", "type": "str" },
+              "search_type": { "value": "similarity", "type": "str" },
+              "number_of_results": { "value": 3, "type": "int" }
+            },
+            "description": "ChromaDB RAG retriever for policies and FAQs",
+            "display_name": "ChromaDB Retriever",
+            "base_classes": ["VectorStore", "BaseRetriever"]
+          }
+        }
+      },
+      {
+        "id": "embedding_model",
+        "type": "genericNode",
+        "position": { "x": 600, "y": 550 },
+        "data": {
+          "type": "HuggingFaceEmbeddings",
+          "node": {
+            "template": {
+              "model_name": { "value": "paraphrase-multilingual-MiniLM-L12-v2", "type": "str" }
+            },
+            "description": "Multilingual embeddings (supports Hindi)",
+            "display_name": "Hindi Embeddings",
+            "base_classes": ["Embeddings"]
+          }
+        }
+      },
+      {
+        "id": "system_prompt",
+        "type": "genericNode",
+        "position": { "x": 600, "y": 200 },
+        "data": {
+          "type": "PromptTemplate",
+          "node": {
+            "template": {
+              "template": { "value": "आप CredResolve के एक विनम्र DCO हैं। RBI दिशानिर्देशों का पालन करें।\n\nग्राहक संदर्भ: {context}\nनीतियां: {policies}\nबातचीत: {chat_history}\n\nग्राहक: {input}\nआर्या:", "type": "str" },
+              "input_variables": { "value": ["context", "policies", "chat_history", "input"], "type": "list" }
+            },
+            "description": "Hindi system + context prompt for DCO agent",
+            "display_name": "DCO System Prompt",
+            "base_classes": ["BasePromptTemplate"]
+          }
+        }
+      },
+      {
+        "id": "llm_gemini",
+        "type": "genericNode",
+        "position": { "x": 900, "y": 300 },
+        "data": {
+          "type": "ChatGoogleGenerativeAI",
+          "node": {
+            "template": {
+              "model": { "value": "gemini-2.0-flash", "type": "str" },
+              "google_api_key": { "value": "", "type": "str", "password": true },
+              "max_output_tokens": { "value": 1024, "type": "int" },
+              "temperature": { "value": 0.3, "type": "float" }
+            },
+            "description": "Gemini 2.0 Flash — free tier (15 RPM, 1M TPM/day)",
+            "display_name": "Gemini LLM",
+            "base_classes": ["BaseLanguageModel", "BaseChatModel"]
+          }
+        }
+      },
+      {
+        "id": "agent_executor",
+        "type": "genericNode",
+        "position": { "x": 900, "y": 500 },
+        "data": {
+          "type": "AgentExecutor",
+          "node": {
+            "template": {
+              "max_iterations": { "value": 5, "type": "int" },
+              "handle_parsing_errors": { "value": true, "type": "bool" },
+              "verbose": { "value": true, "type": "bool" }
+            },
+            "description": "LangGraph-backed agent executor with tools",
+            "display_name": "DCO Agent Executor",
+            "base_classes": ["AgentExecutor"]
+          }
+        }
+      },
+      {
+        "id": "eval_prompt",
+        "type": "genericNode",
+        "position": { "x": 1200, "y": 300 },
+        "data": {
+          "type": "CustomComponent",
+          "node": {
+            "template": {
+              "check_hallucination": { "value": true, "type": "bool" },
+              "check_compliance": { "value": true, "type": "bool" }
+            },
+            "description": "Evaluation prompt — hallucination + compliance check",
+            "display_name": "Response Evaluator",
+            "base_classes": ["str"]
+          }
+        }
+      },
+      {
+        "id": "tts_output",
+        "type": "genericNode",
+        "position": { "x": 1500, "y": 200 },
+        "data": {
+          "type": "CustomComponent",
+          "node": {
+            "template": {
+              "api_key": { "value": "", "type": "str", "display_name": "Sarvam API Key" },
+              "speaker": { "value": "meera", "type": "str" },
+              "language": { "value": "hi-IN", "type": "str" }
+            },
+            "description": "Sarvam AI TTS — converts Hindi response to voice",
+            "display_name": "Sarvam TTS (Voice Out)",
+            "base_classes": ["bytes"]
+          }
+        }
+      },
+      {
+        "id": "chat_output",
+        "type": "genericNode",
+        "position": { "x": 1500, "y": 400 },
+        "data": {
+          "type": "ChatOutput",
+          "node": {
+            "template": {
+              "input_value": { "value": "", "type": "Message" },
+              "should_store_message": { "value": true, "type": "bool" }
+            },
+            "description": "Text output to customer interface",
+            "display_name": "Text Response",
+            "base_classes": ["Message"]
+          }
+        }
+      },
+      {
+        "id": "metrics_logger",
+        "type": "genericNode",
+        "position": { "x": 1500, "y": 600 },
+        "data": {
+          "type": "CustomComponent",
+          "node": {
+            "template": {
+              "prometheus_port": { "value": 9090, "type": "int" }
+            },
+            "description": "Prometheus metrics — latency, tokens, outcomes",
+            "display_name": "Observability Logger",
+            "base_classes": ["None"]
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "input_voice", "target": "input_text", "data": { "label": "transcript" } },
+      { "id": "e2", "source": "input_text", "target": "agent_executor", "data": { "label": "user_message" } },
+      { "id": "e3", "source": "memory_retriever", "target": "system_prompt", "data": { "label": "chat_history" } },
+      { "id": "e4", "source": "user_memory_db", "target": "system_prompt", "data": { "label": "user_context" } },
+      { "id": "e5", "source": "chroma_retriever", "target": "system_prompt", "data": { "label": "policies" } },
+      { "id": "e6", "source": "embedding_model", "target": "chroma_retriever", "data": { "label": "embeddings" } },
+      { "id": "e7", "source": "crm_tool", "target": "agent_executor", "data": { "label": "tool" } },
+      { "id": "e8", "source": "payment_tool", "target": "agent_executor", "data": { "label": "tool" } },
+      { "id": "e9", "source": "ticketing_tool", "target": "agent_executor", "data": { "label": "tool" } },
+      { "id": "e10", "source": "system_prompt", "target": "agent_executor", "data": { "label": "prompt" } },
+      { "id": "e11", "source": "llm_gemini", "target": "agent_executor", "data": { "label": "llm" } },
+      { "id": "e12", "source": "agent_executor", "target": "eval_prompt", "data": { "label": "raw_response" } },
+      { "id": "e13", "source": "eval_prompt", "target": "tts_output", "data": { "label": "verified_response" } },
+      { "id": "e14", "source": "eval_prompt", "target": "chat_output", "data": { "label": "verified_response" } },
+      { "id": "e15", "source": "agent_executor", "target": "metrics_logger", "data": { "label": "metrics" } },
+      { "id": "e16", "source": "agent_executor", "target": "memory_retriever", "data": { "label": "update_memory" } }
+    ],
+    "viewport": { "x": 0, "y": 0, "zoom": 0.7 }
+  }
+}
