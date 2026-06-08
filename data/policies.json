@@ -1,0 +1,62 @@
+[
+  {
+    "id": "POL-001",
+    "title": "RBI Fair Practices Code — Debt Collection",
+    "category": "compliance",
+    "content": "As per RBI Fair Practices Code (FPC) for NBFCs and Banks: (1) Collection agents must not contact borrowers before 8 AM or after 7 PM. (2) Agents must not use abusive language or intimidation. (3) Agents must not disclose borrower's default to third parties. (4) Borrowers have the right to register complaints with the Bank Ombudsman. (5) All communications must identify the lender and purpose clearly."
+  },
+  {
+    "id": "POL-002",
+    "title": "Settlement Policy — Early Payment Discount",
+    "category": "settlement",
+    "content": "CredResolve Settlement Policy POL-SETTLE-2024-001: (1) 0-30 DPD: No discount, full outstanding required. (2) 31-90 DPD: Up to 5% waiver on principal outstanding for full and final settlement within 7 days. (3) 91-180 DPD: Up to 10% waiver for FFS within 5 days, or 24-month restructured EMI plan with 5% reduction. (4) 181+ DPD: Up to 20% waiver for FFS within 3 days, or 36-month EMI plan with 10% waiver. Waivers apply only to overdue interest and penalties, not principal."
+  },
+  {
+    "id": "POL-003",
+    "title": "Promise-to-Pay (PTP) Guidelines",
+    "category": "ptp",
+    "content": "PTP Policy: (1) Maximum PTP extension allowed: 30 days. (2) Minimum partial payment to accept PTP: 25% of overdue amount. (3) PTP must be logged in CRM with date and amount. (4) If PTP is broken twice consecutively, escalate to senior DCO and flag as high-risk. (5) PTP confirmation SMS must be sent to borrower within 1 hour of logging."
+  },
+  {
+    "id": "POL-004",
+    "title": "Escalation Protocol",
+    "category": "escalation",
+    "content": "Escalate to supervisor in these cases: (1) Borrower is 90+ DPD and refusing any option. (2) Borrower claims payment was made — verify via payment ledger first, then escalate if unresolved. (3) Borrower makes legal threats. (4) Borrower is emotionally distressed or in personal crisis. (5) Identity verification fails after 3 attempts. Escalation ticket must be created with priority=high and description of interaction."
+  },
+  {
+    "id": "POL-005",
+    "title": "Hardship Cases — Special Provisions",
+    "category": "hardship",
+    "content": "Hardship Provisions: (1) Borrowers who declare job loss, medical emergency, or natural disaster may apply for moratorium of 3 months. (2) Supporting documents required: salary slip / medical certificate / government notification. (3) During moratorium, no penal interest accrues. (4) Hardship declaration must be logged in CRM with supporting document reference."
+  },
+  {
+    "id": "POL-006",
+    "title": "Payment Dispute Resolution",
+    "category": "dispute",
+    "content": "Dispute Resolution Process: (1) If borrower claims payment made, request UTR/transaction reference number. (2) Verify in payment ledger within 48 hours. (3) If payment found but not posted: credit to account immediately. (4) If payment not found: request bank statement from borrower. (5) All disputes to be resolved within 7 working days per RBI guidelines. Create a DISPUTE ticket immediately."
+  },
+  {
+    "id": "FAQ-001",
+    "title": "Hindi FAQ — EMI kya hoti hai?",
+    "category": "faq",
+    "content": "EMI (Equated Monthly Installment) वह मासिक किश्त है जो आप अपने ऋण के लिए हर महीने चुकाते हैं। इसमें मूलधन और ब्याज दोनों शामिल होते हैं। यदि EMI समय पर नहीं चुकाई जाती, तो विलंब शुल्क और दंड ब्याज लगता है।"
+  },
+  {
+    "id": "FAQ-002",
+    "title": "Hindi FAQ — Settlement kya hota hai?",
+    "category": "faq",
+    "content": "एकमुश्त समझौता (One-Time Settlement) एक ऐसी व्यवस्था है जिसमें आप अपनी पूरी बकाया राशि में से कुछ छूट पर एकमुश्त भुगतान करके अपना ऋण बंद कर सकते हैं। यह विकल्प केवल तभी उपलब्ध होता है जब आपकी EMI 30 दिन से अधिक बकाया हो।"
+  },
+  {
+    "id": "FAQ-003",
+    "title": "Hindi FAQ — CIBIL score par asar",
+    "category": "faq",
+    "content": "बकाया EMI आपके CIBIL स्कोर को नकारात्मक रूप से प्रभावित करती है। जितनी जल्दी आप भुगतान करेंगे, आपका CIBIL स्कोर उतनी जल्दी सुधरेगा। PTP (Promise to Pay) लॉग करने से तत्काल CIBIL प्रभाव नहीं पड़ता, लेकिन भुगतान न होने पर रिपोर्ट किया जाता है।"
+  },
+  {
+    "id": "FAQ-004",
+    "title": "Hindi FAQ — Agar mai nahi de sakta?",
+    "category": "faq",
+    "content": "यदि आप वर्तमान में भुगतान करने में सक्षम नहीं हैं: (1) हमें तुरंत सूचित करें — हम आपकी मदद कर सकते हैं। (2) EMI पुनर्गठन (Restructuring) का विकल्प उपलब्ध है। (3) कठिनाई की स्थिति में 3 महीने का moratorium मिल सकता है। (4) एकमुश्त समझौते पर विचार करें।"
+  }
+]

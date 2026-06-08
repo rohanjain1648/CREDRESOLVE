@@ -1,0 +1,72 @@
+[
+  {
+    "scenario": "Payment Delay",
+    "loan_id": "LOAN001",
+    "customer_name": "Rajesh Kumar",
+    "loan_type": "Personal Loan",
+    "outstanding": 87500,
+    "days_past_due": 45,
+    "expected_intent": "delay",
+    "sample_utterances": [
+      "मुझे अगले हफ्ते तक का समय दे दीजिए, salary आते ही pay कर दूंगा।",
+      "थोड़ा और time चाहिए, problem आ गई है।",
+      "मैं जानता हूं बकाया है, 10 तारीख को जरूर दे दूंगा।"
+    ]
+  },
+  {
+    "scenario": "Payment Refusal",
+    "loan_id": "LOAN001",
+    "customer_name": "Rajesh Kumar",
+    "loan_type": "Personal Loan",
+    "outstanding": 87500,
+    "days_past_due": 45,
+    "expected_intent": "refusal",
+    "sample_utterances": [
+      "मेरे पास पैसे नहीं हैं, मैं कुछ नहीं कर सकता।",
+      "आप जो करना है करो, मैं नहीं दे सकता।",
+      "बाद में बात करते हैं, अभी कुछ नहीं होगा।"
+    ]
+  },
+  {
+    "scenario": "Payment Dispute",
+    "loan_id": "LOAN003",
+    "customer_name": "Mohammed Ali",
+    "loan_type": "Business Loan",
+    "outstanding": 320000,
+    "days_past_due": 95,
+    "expected_intent": "dispute",
+    "sample_utterances": [
+      "मैंने तो payment कर दी थी, UPI से। Reference: UPI123456।",
+      "मैंने 1 अप्रैल को 12000 रुपए भेजे थे।",
+      "आपके system में कोई गड़बड़ी है, मेरे bank में debit हो चुका है।"
+    ]
+  },
+  {
+    "scenario": "Settlement Negotiation",
+    "loan_id": "LOAN001",
+    "customer_name": "Rajesh Kumar",
+    "loan_type": "Personal Loan",
+    "outstanding": 87500,
+    "days_past_due": 45,
+    "expected_intent": "settlement",
+    "sample_utterances": [
+      "क्या मैं एकमुश्त कम पैसों में खाता बंद कर सकता हूं?",
+      "मुझे settlement का option चाहिए।",
+      "अगर discount मिले तो एकदम से pay कर दूं।"
+    ]
+  },
+  {
+    "scenario": "Angry Borrower",
+    "loan_id": "LOAN001",
+    "customer_name": "Rajesh Kumar",
+    "loan_type": "Personal Loan",
+    "outstanding": 87500,
+    "days_past_due": 45,
+    "expected_intent": "angry",
+    "sample_utterances": [
+      "आप लोग रोज call करते हो, बहुत परेशान हो गया हूं!",
+      "मुझे मत तंग करो, कोर्ट चला जाऊंगा!",
+      "यह harassment है, मैं RBI में complaint करूंगा!"
+    ]
+  }
+]
