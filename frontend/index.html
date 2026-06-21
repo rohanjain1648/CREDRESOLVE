@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CredResolve DCO — Arya AI Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #6c63ff;
+      --accent2: #00d4aa;
+      --user-bubble: #6c63ff;
+      --ai-bubble: #1e2235;
+      --text: #e8eaf6;
+      --muted: #8b90b8;
+      --red: #ff5f5f;
+      --green: #00d4aa;
+      --yellow: #ffd166;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .logo { font-size: 22px; }
+    .title h1 { font-size: 16px; font-weight: 700; color: var(--text); }
+    .title p { font-size: 11px; color: var(--muted); }
+    .status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--green); margin-left: auto;
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── Main layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Config sidebar ── */
+    .sidebar {
+      width: 240px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+    .sidebar h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+    }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input, select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .toggle {
+      position: relative; width: 40px; height: 22px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      cursor: pointer;
+      transition: .2s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      left: 3px; top: 3px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: .2s;
+    }
+    input:checked + .slider { background: var(--accent); border-color: var(--accent); }
+    input:checked + .slider::before { transform: translateX(18px); background: #fff; }
+
+    .metrics-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 11px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .metric-row:last-child { border-bottom: none; }
+    .metric-val { color: var(--accent2); font-weight: 600; }
+
+    .loan-badge {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      display: none;
+    }
+    .loan-badge.visible { display: block; }
+    .loan-badge strong { color: var(--accent2); }
+
+    /* ── Chat area ── */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+    .messages::-webkit-scrollbar { width: 5px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .bubble-row {
+      display: flex;
+      gap: 10px;
+      max-width: 75%;
+    }
+    .bubble-row.user { align-self: flex-end; flex-direction: row-reverse; }
+    .bubble-row.ai { align-self: flex-start; }
+
+    .avatar {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      align-self: flex-end;
+    }
+    .avatar.ai { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+    .avatar.user { background: var(--surface2); border: 1px solid var(--border); }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 100%;
+      word-break: break-word;
+    }
+    .bubble.user {
+      background: var(--user-bubble);
+      border-bottom-right-radius: 4px;
+      color: #fff;
+    }
+    .bubble.ai {
+      background: var(--ai-bubble);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+    .bubble .audio-btn {
+      margin-top: 8px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--accent2);
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: all .15s;
+    }
+    .bubble .audio-btn:hover { background: var(--surface2); }
+
+    /* ── Trace panel ── */
+    .trace-panel {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      width: 0;
+      overflow: hidden;
+      transition: width 0.3s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .trace-panel.open { width: 300px; }
+    .trace-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .trace-close {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 16px;
+    }
+    .trace-body {
+      flex: 1; overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .trace-step {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .trace-step .agent-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+    .agent-context   .agent-tag { background: #3d2b6b; color: #c4a0ff; }
+    .agent-retrieval .agent-tag { background: #1b3a4b; color: #7dd3fc; }
+    .agent-decision  .agent-tag { background: #2d3a1e; color: #86efac; }
+    .agent-execution .agent-tag { background: #3d2200; color: #fbbf24; }
+    .agent-qa        .agent-tag { background: #1e2d3d; color: #67e8f9; }
+    .trace-step .content { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Input bar ── */
+    .input-bar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    .input-wrap {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      align-items: flex-end;
+      padding: 10px 14px;
+      gap: 8px;
+      transition: border-color .2s;
+    }
+    .input-wrap:focus-within { border-color: var(--accent); }
+    #msg-input {
+      flex: 1; background: none; border: none;
+      color: var(--text); font-size: 14px;
+      resize: none; outline: none;
+      max-height: 120px;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+    #msg-input::placeholder { color: var(--muted); }
+
+    .icon-btn {
+      width: 38px; height: 38px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--muted);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      transition: all .15s;
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+
+    #mic-btn { transition: all .15s; }
+    #mic-btn.recording {
+      background: #ff2d2d22;
+      border-color: var(--red);
+      color: var(--red);
+      animation: mic-pulse 1s infinite;
+    }
+    @keyframes mic-pulse { 0%,100%{box-shadow:0 0 0 0 #ff2d2d44} 50%{box-shadow:0 0 0 8px #ff2d2d00} }
+
+    #send-btn {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      transition: all .15s;
+    }
+    #send-btn:hover { background: #7b74ff; transform: scale(1.05); }
+    #send-btn:disabled { background: var(--border); cursor: not-allowed; transform: none; }
+
+    /* ── Typing indicator ── */
+    .typing {
+      display: flex; gap: 5px; padding: 14px 16px;
+      align-items: center;
+    }
+    .typing span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted);
+      animation: bounce 1.2s infinite;
+    }
+    .typing span:nth-child(2) { animation-delay: .2s; }
+    .typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%,80%,100%{transform:scale(0.8);opacity:.5} 40%{transform:scale(1.2);opacity:1} }
+
+    /* ── Empty state ── */
+    .empty-state {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      flex: 1; gap: 12px; color: var(--muted);
+      text-align: center; padding: 40px;
+    }
+    .empty-state .icon { font-size: 48px; }
+    .empty-state h2 { color: var(--text); font-size: 18px; }
+    .suggestion-chips {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      justify-content: center; margin-top: 8px;
+    }
+    .chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Recording banner ── */
+    #rec-banner {
+      display: none;
+      background: #ff2d2d22;
+      border-top: 1px solid var(--red);
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--red);
+      text-align: center;
+      flex-shrink: 0;
+    }
+    #rec-banner.visible { display: block; }
+    #transcribing-banner {
+      display: none;
+      background: #6c63ff22;
+      border-top: 1px solid var(--accent);
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--accent);
+      text-align: center;
+      flex-shrink: 0;
+    }
+    #transcribing-banner.visible { display: block; }
+
+    /* ── Score badges ── */
+    .score-row {
+      display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .score-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .score-badge.pass { border-color: var(--green); color: var(--green); }
+    .score-badge.fail { border-color: var(--red); color: var(--red); }
+    .score-badge.neutral { border-color: var(--yellow); color: var(--yellow); }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">🤖</div>
+  <div class="title">
+    <h1>CredResolve DCO — Arya</h1>
+    <p>AI Debt Collection Officer · Hindi/Hinglish · LangGraph + RAG + Voice</p>
+  </div>
+  <div class="status-dot" id="status-dot" title="Server online"></div>
+</header>
+
+<div class="main">
+
+  <!-- ── Config Sidebar ── -->
+  <aside class="sidebar">
+    <h3>Session Config</h3>
+
+    <div>
+      <label>Loan ID</label>
+      <input id="loan-id" type="text" placeholder="LOAN001" value="LOAN001" />
+    </div>
+
+    <div>
+      <label>Language</label>
+      <select id="lang">
+        <option value="hi">Hindi (हिंदी)</option>
+        <option value="en" selected>English</option>
+        <option value="hi-en">Hinglish</option>
+      </select>
+    </div>
+
+    <div class="toggle-row">
+      <span>Multi-Agent Mode</span>
+      <label class="toggle">
+        <input type="checkbox" id="multi-agent-toggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span>Auto-play Voice</span>
+      <label class="toggle">
+        <input type="checkbox" id="voice-toggle" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div id="loan-info" class="loan-badge"></div>
+
+    <h3>Live Metrics</h3>
+    <div class="metrics-box" id="metrics-box">
+      <div class="metric-row"><span>Conversations</span><span class="metric-val" id="m-conv">—</span></div>
+      <div class="metric-row"><span>Tokens In</span><span class="metric-val" id="m-tok-in">—</span></div>
+      <div class="metric-row"><span>Tokens Out</span><span class="metric-val" id="m-tok-out">—</span></div>
+      <div class="metric-row"><span>LLM Latency</span><span class="metric-val" id="m-lat">—</span></div>
+      <div class="metric-row"><span>RAG Docs</span><span class="metric-val" id="m-rag">—</span></div>
+      <div class="metric-row"><span>Agent Handoffs</span><span class="metric-val" id="m-handoffs">—</span></div>
+    </div>
+
+    <button class="icon-btn" style="width:100%;border-radius:8px;font-size:13px;color:var(--muted);gap:6px;" onclick="newSession()">
+      🔄 New Session
+    </button>
+  </aside>
+
+  <!-- ── Chat ── -->
+  <section class="chat-area">
+    <div class="messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <div class="icon">🎙️</div>
+        <h2>Arya is ready</h2>
+        <p>Type a message or hold the mic button to speak in Hindi/Hinglish</p>
+        <div class="suggestion-chips">
+          <div class="chip" onclick="quickSend('मुझे loan settle करना है')">💰 Loan settle करना है</div>
+          <div class="chip" onclick="quickSend('I want to pay my overdue EMI')">💳 Pay overdue EMI</div>
+          <div class="chip" onclick="quickSend('मैंने payment कर दी, please check करें')">✅ Payment already done</div>
+          <div class="chip" onclick="quickSend('मुझे time chahiye payment ke liye')">⏳ Need more time</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="rec-banner">🔴 Recording… release mic button to send</div>
+    <div id="transcribing-banner">✨ Transcribing audio…</div>
+
+    <div class="input-bar">
+      <div class="input-wrap">
+        <textarea id="msg-input" rows="1" placeholder="Type a message or use mic…" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="icon-btn" id="mic-btn" title="Hold to record (Hindi/Hinglish)"
+          onmousedown="startRecording()" onmouseup="stopRecording()"
+          ontouchstart="startRecording()" ontouchend="stopRecording()">🎙️</button>
+      </div>
+      <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
+    </div>
+  </section>
+
+  <!-- ── Agent Trace Panel ── -->
+  <aside class="trace-panel" id="trace-panel">
+    <div class="trace-header">
+      Agent Trace
+      <button class="trace-close" onclick="closeTrace()">×</button>
+    </div>
+    <div class="trace-body" id="trace-body"></div>
+  </aside>
+
+</div>
+
+<script>
+const API = '';  // same origin
+let sessionId = crypto.randomUUID();
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let metricsTimer = null;
+
+// ── Startup ─────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  checkHealth();
+  fetchMetrics();
+  metricsTimer = setInterval(fetchMetrics, 8000);
+  document.getElementById('msg-input').focus();
+});
+
+async function checkHealth() {
+  try {
+    const r = await fetch(API + '/health');
+    const j = await r.json();
+    const dot = document.getElementById('status-dot');
+    if (j.status === 'ok') {
+      dot.style.background = 'var(--green)';
+      dot.title = 'Server online';
+    }
+  } catch {
+    document.getElementById('status-dot').style.background = 'var(--red)';
+  }
+}
+
+// ── Metrics ──────────────────────────────────────────────────────────────────
+async function fetchMetrics() {
+  try {
+    const r = await fetch(API + '/metrics');
+    const text = await r.text();
+
+    const pick = (name) => {
+      const m = text.match(new RegExp(`^${name}\\{[^}]*\\}\\s+([\\d.]+)`, 'm'))
+               || text.match(new RegExp(`^${name}\\s+([\\d.]+)`, 'm'));
+      return m ? parseFloat(m[1]) : null;
+    };
+
+    const conv = pick('dco_conversation_duration_seconds_count');
+    const tokIn = pick('dco_token_usage_total{direction="input"');
+    const tokOut = pick('dco_token_usage_total{direction="output"');
+    const handoffs = (() => {
+      let total = 0;
+      for (const m of text.matchAll(/^dco_agent_handoffs_total\{[^}]+\}\s+([\d.]+)/gm))
+        total += parseFloat(m[1]);
+      return total || null;
+    })();
+    const ragDocs = pick('dco_rag_retrieved_docs_count');
+
+    // LLM latency average from sum/count
+    const latSum = pick('dco_llm_latency_ms_sum');
+    const latCnt = pick('dco_llm_latency_ms_count');
+    const latAvg = latSum && latCnt ? (latSum / latCnt).toFixed(0) + 'ms' : '—';
+
+    document.getElementById('m-conv').textContent = conv ?? '—';
+    document.getElementById('m-tok-in').textContent = tokIn ? tokIn.toLocaleString() : '—';
+    document.getElementById('m-tok-out').textContent = tokOut ? tokOut.toLocaleString() : '—';
+    document.getElementById('m-lat').textContent = latAvg;
+    document.getElementById('m-rag').textContent = ragDocs ? Math.round(ragDocs) : '—';
+    document.getElementById('m-handoffs').textContent = handoffs ?? '—';
+  } catch {}
+}
+
+// ── Session ──────────────────────────────────────────────────────────────────
+function newSession() {
+  sessionId = crypto.randomUUID();
+  document.getElementById('messages').innerHTML = '';
+  document.getElementById('empty-state') && renderEmpty();
+  closeTrace();
+  document.getElementById('loan-info').classList.remove('visible');
+}
+
+function renderEmpty() {
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = `
+    <div class="empty-state" id="empty-state">
+      <div class="icon">🎙️</div>
+      <h2>Arya is ready</h2>
+      <p>Type a message or hold the mic button to speak in Hindi/Hinglish</p>
+      <div class="suggestion-chips">
+        <div class="chip" onclick="quickSend('मुझे loan settle करना है')">💰 Loan settle करना है</div>
+        <div class="chip" onclick="quickSend('I want to pay my overdue EMI')">💳 Pay overdue EMI</div>
+        <div class="chip" onclick="quickSend('मैंने payment कर दी, please check करें')">✅ Payment already done</div>
+        <div class="chip" onclick="quickSend('मुझे time chahiye payment ke liye')">⏳ Need more time</div>
+      </div>
+    </div>`;
+}
+
+function quickSend(text) {
+  document.getElementById('msg-input').value = text;
+  sendMessage();
+}
+
+// ── Sending ───────────────────────────────────────────────────────────────────
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+async function sendMessage(text) {
+  const input = document.getElementById('msg-input');
+  const msg = (text || input.value).trim();
+  if (!msg) return;
+
+  clearEmpty();
+  input.value = '';
+  input.style.height = 'auto';
+
+  appendBubble('user', msg);
+  const typingId = appendTyping();
+
+  const isMulti = document.getElementById('multi-agent-toggle').checked;
+  const loanId = document.getElementById('loan-id').value.trim();
+  const lang = document.getElementById('lang').value;
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+
+  try {
+    const endpoint = isMulti ? '/multi-agent/chat' : '/chat';
+    const body = { message: msg, session_id: sessionId, loan_id: loanId, language: lang };
+
+    const r = await fetch(API + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+
+    removeTyping(typingId);
+
+    const reply = isMulti ? j.final_response : j.message;
+    const extras = isMulti ? buildMultiExtras(j) : buildSingleExtras(j);
+    appendBubble('ai', reply, extras, j);
+
+    if (isMulti && j.agent_trace?.length) renderTrace(j.agent_trace);
+    if (!isMulti && j.current_state) updateLoanBadge(j);
+
+    fetchMetrics();
+
+    if (document.getElementById('voice-toggle').checked) {
+      playTTS(reply);
+    }
+  } catch (err) {
+    removeTyping(typingId);
+    appendBubble('ai', `❌ Error: ${err.message}. Is the server running?`);
+  }
+  btn.disabled = false;
+}
+
+function buildSingleExtras(j) {
+  const parts = [];
+  if (j.current_state) parts.push(`<span class="score-badge neutral">State: ${j.current_state}</span>`);
+  if (j.intent) parts.push(`<span class="score-badge neutral">Intent: ${j.intent}</span>`);
+  if (j.sources?.length) parts.push(`<span class="score-badge neutral">📚 ${j.sources.length} policy chunks</span>`);
+  return parts.length ? `<div class="score-row">${parts.join('')}</div>` : '';
+}
+
+function buildMultiExtras(j) {
+  const parts = [];
+  if (j.intent) parts.push(`<span class="score-badge neutral">Intent: ${j.intent}</span>`);
+  if (j.evaluation_passed) parts.push(`<span class="score-badge pass">✓ QA Passed</span>`);
+  else parts.push(`<span class="score-badge fail">✗ QA Failed</span>`);
+  if (j.ptp_id) parts.push(`<span class="score-badge pass">PTP: ${j.ptp_id}</span>`);
+  if (j.ticket_id) parts.push(`<span class="score-badge fail">Ticket: ${j.ticket_id}</span>`);
+  if (j.accuracy_score) parts.push(`<span class="score-badge neutral">Acc: ${(j.accuracy_score*100).toFixed(0)}%</span>`);
+  if (j.agent_trace?.length) parts.push(`<span class="score-badge neutral">🤖 ${j.agent_trace.length} agents</span>`);
+  return parts.length ? `<div class="score-row">${parts.join('')}</div>` : '';
+}
+
+function updateLoanBadge(j) {
+  const el = document.getElementById('loan-info');
+  if (j.intent || j.resolution_outcome) {
+    el.innerHTML = `
+      <strong>Intent:</strong> ${j.intent || '—'}<br>
+      <strong>Outcome:</strong> ${j.resolution_outcome || '—'}<br>
+      <strong>State:</strong> ${j.current_state}`;
+    el.classList.add('visible');
+  }
+}
+
+// ── Bubbles ───────────────────────────────────────────────────────────────────
+function clearEmpty() {
+  const e = document.getElementById('empty-state');
+  if (e) e.remove();
+}
+
+function appendBubble(role, text, extraHtml = '', data = {}) {
+  const msgs = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = `bubble-row ${role}`;
+
+  const avatar = role === 'ai'
+    ? '<div class="avatar ai">🤖</div>'
+    : '<div class="avatar user">👤</div>';
+
+  const audioBtn = (role === 'ai' && text)
+    ? `<button class="audio-btn" onclick="playTTS(${JSON.stringify(text)})">🔊 Play</button>`
+    : '';
+
+  row.innerHTML = `
+    ${avatar}
+    <div class="bubble ${role}">
+      ${escapeHtml(text)}
+      ${audioBtn}
+      ${extraHtml}
+    </div>`;
+
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+  return row;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+function appendTyping() {
+  const msgs = document.getElementById('messages');
+  const id = 'typing-' + Date.now();
+  msgs.innerHTML += `
+    <div class="bubble-row ai" id="${id}">
+      <div class="avatar ai">🤖</div>
+      <div class="bubble ai">
+        <div class="typing"><span></span><span></span><span></span></div>
+      </div>
+    </div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// ── Voice Recording ───────────────────────────────────────────────────────────
+async function startRecording() {
+  if (isRecording) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.start(100);
+    isRecording = true;
+    document.getElementById('mic-btn').classList.add('recording');
+    document.getElementById('rec-banner').classList.add('visible');
+  } catch (err) {
+    alert('Microphone access denied: ' + err.message);
+  }
+}
+
+async function stopRecording() {
+  if (!isRecording || !mediaRecorder) return;
+  isRecording = false;
+  document.getElementById('mic-btn').classList.remove('recording');
+  document.getElementById('rec-banner').classList.remove('visible');
+  document.getElementById('transcribing-banner').classList.add('visible');
+
+  mediaRecorder.stop();
+  mediaRecorder.stream.getTracks().forEach(t => t.stop());
+
+  await new Promise(r => mediaRecorder.addEventListener('stop', r, { once: true }));
+
+  const blob = new Blob(audioChunks, { type: 'audio/webm' });
+  const form = new FormData();
+  form.append('audio', blob, 'recording.webm');
+  const lang = document.getElementById('lang').value === 'hi' ? 'hi-IN' : 'hi-IN';
+
+  try {
+    const r = await fetch(`${API}/voice/transcribe?language=${lang}`, {
+      method: 'POST', body: form,
+    });
+    const j = await r.json();
+    document.getElementById('transcribing-banner').classList.remove('visible');
+    if (j.transcript) sendMessage(j.transcript);
+    else alert('Could not transcribe audio. Please try again.');
+  } catch (err) {
+    document.getElementById('transcribing-banner').classList.remove('visible');
+    alert('Transcription failed: ' + err.message);
+  }
+}
+
+// ── TTS Playback ──────────────────────────────────────────────────────────────
+async function playTTS(text) {
+  if (!text) return;
+  try {
+    const r = await fetch(API + '/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, language: 'hi-IN' }),
+    });
+    if (!r.ok) throw new Error('TTS failed');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play();
+    audio.onended = () => URL.revokeObjectURL(url);
+  } catch (err) {
+    console.warn('TTS playback error:', err.message);
+  }
+}
+
+// ── Agent Trace ───────────────────────────────────────────────────────────────
+const AGENT_COLORS = {
+  context: 'agent-context', retrieval: 'agent-retrieval',
+  decision: 'agent-decision', execution: 'agent-execution', qa: 'agent-qa',
+};
+
+function renderTrace(trace) {
+  const panel = document.getElementById('trace-panel');
+  const body = document.getElementById('trace-body');
+  body.innerHTML = '';
+  trace.forEach((step, i) => {
+    const cls = AGENT_COLORS[step.agent] || '';
+    const meta = step.metadata ? Object.entries(step.metadata)
+      .filter(([k]) => !['next'].includes(k))
+      .map(([k,v]) => `<span style="color:var(--muted)">${k}:</span> <b>${JSON.stringify(v)}</b>`)
+      .join(' · ') : '';
+    body.innerHTML += `
+      <div class="trace-step ${cls}">
+        <span class="agent-tag">${step.agent}</span>
+        <div class="content">${escapeHtml(step.content || '')}</div>
+        ${meta ? `<div style="font-size:10px;color:var(--muted);margin-top:5px">${meta}</div>` : ''}
+      </div>`;
+  });
+  panel.classList.add('open');
+}
+
+function closeTrace() {
+  document.getElementById('trace-panel').classList.remove('open');
+}
+</script>
+</body>
+</html>

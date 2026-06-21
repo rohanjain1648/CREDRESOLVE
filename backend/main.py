@@ -4,12 +4,13 @@ Exposes REST + WebSocket + Voice endpoints.
 """
 import uuid
 import time
-import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
-from fastapi.responses import Response, JSONResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -55,6 +56,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve frontend static files
+_FRONTEND = Path(__file__).parent.parent / "frontend"
+if _FRONTEND.exists():
+    app.mount("/static", StaticFiles(directory=str(_FRONTEND)), name="static")
 
 
 # ── Request / Response Models ─────────────────────────────────────────────────
@@ -177,6 +183,29 @@ async def metrics():
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": "CredResolve DCO", "version": "1.0.0"}
+
+
+@app.get("/", response_class=FileResponse)
+async def root():
+    """Serve the frontend UI."""
+    index = _FRONTEND / "index.html"
+    if index.exists():
+        return FileResponse(str(index))
+    return Response(content="Frontend not found. Visit /docs", media_type="text/plain")
+
+
+class TTSRequest(BaseModel):
+    text: str
+    language: str = "hi-IN"
+
+
+@app.post("/tts")
+async def text_to_speech(req: TTSRequest):
+    """Convert text to Hindi speech via ElevenLabs (MP3 bytes)."""
+    from backend.voice.elevenlabs_voice import get_elevenlabs_client
+    client = get_elevenlabs_client()
+    audio_bytes = await client.text_to_speech(req.text)
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 
 # ── Part 10: Multi-Agent endpoint ─────────────────────────────────────────────
