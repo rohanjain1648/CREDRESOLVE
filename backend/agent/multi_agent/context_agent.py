@@ -11,6 +11,7 @@ Agent-to-agent output:
   and routes next_agent → "decision" (or "__end__" after 3 failures).
 """
 
+import json
 import time
 
 from backend.tools.crm_tool import fetch_customer_data
@@ -62,7 +63,8 @@ def context_agent(state: MultiAgentState) -> dict:
             }
 
         attempts += 1
-        crm_result = fetch_customer_data.invoke({"loan_id": loan_id})
+        crm_raw = fetch_customer_data.invoke({"loan_id": loan_id})
+        crm_result = json.loads(crm_raw) if isinstance(crm_raw, str) else crm_raw
 
         if crm_result.get("error"):
             if attempts >= MAX_AUTH_ATTEMPTS:
@@ -108,7 +110,11 @@ def context_agent(state: MultiAgentState) -> dict:
 
         # ── Step 3: Load SQLite cross-session memory ──────────────────────────
         customer_id = crm_result.get("customer_id", loan_id)
-        upsert_user_profile(customer_id=customer_id, loan_id=loan_id)
+        upsert_user_profile(
+            customer_id=customer_id,
+            loan_id=loan_id,
+            name=crm_result.get("name", ""),
+        )
         memory_summary = build_memory_summary(customer_id)
 
         latency_ms = (time.time() - t0) * 1000

@@ -54,8 +54,17 @@ def retrieval_agent(state: MultiAgentState) -> dict:
     latency_ms = (time.time() - t0) * 1000
     RAG_LATENCY.observe(latency_ms / 1000)
 
+    # ── Normalise retriever output → list of dicts ────────────────────────────
+    sources = raw_results.get("sources", [])
+    docs = raw_results.get("raw_docs", [])
+    scores = raw_results.get("relevance_scores", [])
+    normalised = [
+        {"id": s, "text": d, "relevance": r}
+        for s, d, r in zip(sources, docs, scores)
+    ]
+
     # ── Filter by relevance threshold ─────────────────────────────────────────
-    filtered = [r for r in raw_results if r.get("relevance", 0) >= RELEVANCE_THRESHOLD]
+    filtered = [r for r in normalised if r.get("relevance", 0) >= RELEVANCE_THRESHOLD]
 
     # ── Build human-readable summary for the agent bus ────────────────────────
     summaries = []
@@ -66,7 +75,7 @@ def retrieval_agent(state: MultiAgentState) -> dict:
         summaries.append(f"[{doc_id}] (rel={rel}) {text_preview}…")
 
     handoff_content = (
-        f"Retrieved {len(filtered)}/{len(raw_results)} chunks above threshold {RELEVANCE_THRESHOLD} "
+        f"Retrieved {len(filtered)}/{len(normalised)} chunks above threshold {RELEVANCE_THRESHOLD} "
         f"for intent='{intent}'. Sources: " + ", ".join(r.get("id", "?") for r in filtered)
         if filtered else f"No chunks above threshold for intent='{intent}'."
     )
@@ -83,7 +92,7 @@ def retrieval_agent(state: MultiAgentState) -> dict:
             metadata={
                 "next": "decision",
                 "intent": intent,
-                "results_total": len(raw_results),
+                "results_total": len(normalised),
                 "results_above_threshold": len(filtered),
                 "latency_ms": round(latency_ms, 1),
                 "summaries": summaries,

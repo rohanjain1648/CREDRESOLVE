@@ -148,11 +148,14 @@ def build_graph(checkpointer=None):
 
 # ── Singleton with SQLite checkpointing ──────────────────────────────────────
 _graph = None
+_checkpointer_cm = None
 
 
 def get_graph():
-    global _graph
+    global _graph, _checkpointer_cm
     if _graph is None:
-        memory = SqliteSaver.from_conn_string("./langgraph_checkpoints.db")
+        import sqlite3
+        conn = sqlite3.connect("./langgraph_checkpoints.db", check_same_thread=False)
+        memory = SqliteSaver(conn)
         _graph = build_graph(checkpointer=memory)
     return _graph

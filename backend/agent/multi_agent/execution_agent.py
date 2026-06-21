@@ -14,8 +14,19 @@ Agent-to-agent communication:
   Routes:   next_agent → "qa" (always — QAAgent validates before final response).
 """
 
+import json
 import time
 from datetime import datetime
+
+
+def _parse(raw) -> dict:
+    """Parse a JSON string returned by a LangChain @tool into a dict."""
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"raw": raw}
+    return raw if isinstance(raw, dict) else {}
 
 from backend.tools.crm_tool import log_ptp, update_customer_notes, fetch_customer_data
 from backend.tools.payment_tool import (
@@ -63,20 +74,20 @@ def execution_agent(state: MultiAgentState) -> dict:
             f"escalated from AI DCO. Intent: {intent}. "
             f"Negotiation rounds exhausted or emotional distress detected."
         )
-        ticket_result = create_ticket.invoke({
+        ticket_result = _parse(create_ticket.invoke({
             "loan_id": loan_id,
             "category": "escalation",
             "priority": priority,
             "description": description,
             "assigned_to": "senior_dco",
-        })
+        }))
         TOOL_CALLS.labels(tool_name="create_ticket", status="success").inc()
         ticket_id = ticket_result.get("ticket_id", "")
         tool_results["ticket"] = ticket_result
         tool_call_log.append(f"create_ticket → {ticket_id} (priority={priority})")
 
         if phone:
-            sms_result = send_sms.invoke({
+            sms_result = _parse(send_sms.invoke({
                 "phone": phone,
                 "message": (
                     f"प्रिय {name} ji, आपका case (Ticket: {ticket_id}) "
@@ -84,7 +95,7 @@ def execution_agent(state: MultiAgentState) -> dict:
                     "24 घंटे में call back होगी।"
                 ),
                 "template_id": "callback_scheduled",
-            })
+            }))
             TOOL_CALLS.labels(tool_name="send_sms", status="success").inc()
             tool_results["sms"] = sms_result
             sms_sent = True
@@ -95,11 +106,11 @@ def execution_agent(state: MultiAgentState) -> dict:
     # ══════════════════════════════════════════════════════════════════════════
     elif intent in ("delay", "cooperative") and proposed_amount > 0 and proposed_date:
         # Calculate final outstanding for accuracy
-        calc_result = calculate_outstanding.invoke({
+        calc_result = _parse(calculate_outstanding.invoke({
             "loan_id": loan_id,
             "days_past_due": dpd,
             "principal": outstanding,
-        })
+        }))
         TOOL_CALLS.labels(tool_name="calculate_outstanding", status="success").inc()
         tool_results["outstanding"] = calc_result
         tool_call_log.append(
@@ -107,11 +118,11 @@ def execution_agent(state: MultiAgentState) -> dict:
         )
 
         # Log PTP
-        ptp_result = log_ptp.invoke({
+        ptp_result = _parse(log_ptp.invoke({
             "loan_id": loan_id,
             "ptp_date": proposed_date,
             "ptp_amount": proposed_amount,
-        })
+        }))
         TOOL_CALLS.labels(tool_name="log_ptp", status="success").inc()
         ptp_id = ptp_result.get("ptp_id", "")
         ptp_logged = True
@@ -120,7 +131,7 @@ def execution_agent(state: MultiAgentState) -> dict:
 
         # Confirmation SMS
         if phone:
-            sms_result = send_sms.invoke({
+            sms_result = _parse(send_sms.invoke({
                 "phone": phone,
                 "message": (
                     f"प्रिय {name} ji, आपका PTP confirm हुआ। "
@@ -128,7 +139,7 @@ def execution_agent(state: MultiAgentState) -> dict:
                     f"Reference: {ptp_id}। CredResolve"
                 ),
                 "template_id": "ptp_confirmation",
-            })
+            }))
             TOOL_CALLS.labels(tool_name="send_sms", status="success").inc()
             tool_results["sms"] = sms_result
             sms_sent = True
@@ -138,11 +149,11 @@ def execution_agent(state: MultiAgentState) -> dict:
     # SETTLEMENT PATH
     # ══════════════════════════════════════════════════════════════════════════
     elif intent == "settlement":
-        settlement_result = calculate_settlement_offer.invoke({
+        settlement_result = _parse(calculate_settlement_offer.invoke({
             "loan_id": loan_id,
             "outstanding": outstanding,
             "days_past_due": dpd,
-        })
+        }))
         TOOL_CALLS.labels(tool_name="calculate_settlement_offer", status="success").inc()
         tool_results["settlement"] = settlement_result
         tool_call_log.append(
@@ -152,11 +163,11 @@ def execution_agent(state: MultiAgentState) -> dict:
         )
 
         if proposed_amount > 0 and proposed_date:
-            ptp_result = log_ptp.invoke({
+            ptp_result = _parse(log_ptp.invoke({
                 "loan_id": loan_id,
                 "ptp_date": proposed_date,
                 "ptp_amount": proposed_amount,
-            })
+            }))
             TOOL_CALLS.labels(tool_name="log_ptp", status="success").inc()
             ptp_id = ptp_result.get("ptp_id", "")
             ptp_logged = True
@@ -164,7 +175,7 @@ def execution_agent(state: MultiAgentState) -> dict:
             tool_call_log.append(f"log_ptp (settlement) → {ptp_id}")
 
             if phone:
-                sms_result = send_sms.invoke({
+                sms_result = _parse(send_sms.invoke({
                     "phone": phone,
                     "message": (
                         f"प्रिय {name} ji, Settlement offer: "
@@ -172,7 +183,7 @@ def execution_agent(state: MultiAgentState) -> dict:
                         f"Ref: {ptp_id}। CredResolve"
                     ),
                     "template_id": "settlement_offer",
-                })
+                }))
                 TOOL_CALLS.labels(tool_name="send_sms", status="success").inc()
                 tool_results["sms"] = sms_result
                 sms_sent = True
@@ -184,10 +195,10 @@ def execution_agent(state: MultiAgentState) -> dict:
     elif intent == "dispute":
         txn_id = customer_data.get("last_txn_id", "")
         if txn_id:
-            verify_result = verify_payment.invoke({
+            verify_result = _parse(verify_payment.invoke({
                 "loan_id": loan_id,
                 "txn_id": txn_id,
-            })
+            }))
             TOOL_CALLS.labels(tool_name="verify_payment", status="success").inc()
             tool_results["payment_verify"] = verify_result
             tool_call_log.append(

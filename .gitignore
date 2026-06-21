@@ -129,3 +129,11 @@ Thumbs.db
 *.swp
 *.swo
 .claude/
+
+# Runtime data (generated at startup — do not commit)
+chroma_db/
+vector_store.pkl
+model_cache/
+*.db
+langgraph_checkpoints.db
+langgraph_ma_checkpoints.db

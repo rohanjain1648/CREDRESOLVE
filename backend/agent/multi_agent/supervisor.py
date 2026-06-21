@@ -22,7 +22,6 @@ Agent-to-agent messages accumulate in state.agent_messages throughout
 the graph run, giving a full reasoning trace per turn.
 """
 
-from functools import lru_cache
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -123,11 +122,18 @@ def build_multi_agent_graph(checkpointer=None) -> StateGraph:
     return graph.compile(checkpointer=checkpointer)
 
 
-@lru_cache(maxsize=1)
+_ma_graph = None
+
+
 def get_multi_agent_graph():
     """Singleton with SQLite checkpointing (one per process)."""
-    checkpointer = SqliteSaver.from_conn_string("./langgraph_ma_checkpoints.db")
-    return build_multi_agent_graph(checkpointer=checkpointer)
+    global _ma_graph
+    if _ma_graph is None:
+        import sqlite3
+        conn = sqlite3.connect("./langgraph_ma_checkpoints.db", check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
+        _ma_graph = build_multi_agent_graph(checkpointer=checkpointer)
+    return _ma_graph
 
 
 # ── Convenience run helper ────────────────────────────────────────────────────

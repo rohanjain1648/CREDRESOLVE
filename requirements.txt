@@ -1,14 +1,13 @@
 # Core LLM & Agent Framework
 langchain>=0.2.0
-langgraph>=0.1.0
+langgraph>=1.0.0
+langgraph-checkpoint-sqlite>=3.0.0
 langchain-google-genai>=1.0.0
 langchain-community>=0.2.0
 google-generativeai>=0.7.0
 
-# Vector Store / RAG
-chromadb>=0.5.0
-sentence-transformers>=3.0.0
-tiktoken>=0.7.0
+# Vector Store / RAG (numpy-based in-process store — no ChromaDB needed)
+numpy>=1.26.0
 
 # Voice AI
 requests>=2.31.0
@@ -32,5 +31,5 @@ python-dotenv>=1.0.1
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
 
-# LangFlow (optional — for visual workflow)
-langflow>=1.0.0
+# LangFlow (optional — visual workflow builder, install locally only)
+# langflow>=1.0.0
