@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -98,26 +98,38 @@ async def chat(req: ChatRequest):
     ACTIVE_SESSIONS.inc()
     start = time.time()
 
-    # Build initial state for new sessions
-    initial_state: ConversationState = {
-        "messages": [{"role": "user", "content": req.message}],
-        "session_id": session_id,
-        "language": req.language,
-        "voice_enabled": req.voice_enabled,
-        "authenticated": False,
-        "ptp_logged": False,
-        "escalation_required": False,
-        "negotiation_rounds": 0,
-        "token_usage": 0,
-        "tool_call_count": 0,
-        "hallucination_flags": 0,
-    }
+    # The graph pauses (interrupt_after negotiation) awaiting the borrower's
+    # reply. If this thread is mid-conversation, resume it with the new message
+    # instead of restarting the whole greeting→auth→… pipeline.
+    snapshot = graph.get_state(config)
+    is_resuming = bool(getattr(snapshot, "next", None))
 
-    # If loan_id provided, pre-populate
-    if req.loan_id:
-        initial_state["customer_data"] = {"loan_id": req.loan_id}
+    if is_resuming:
+        graph.update_state(
+            config,
+            {"messages": [{"role": "user", "content": req.message}]},
+        )
+        result = graph.invoke(None, config=config)
+    else:
+        # Build initial state for new sessions
+        initial_state: ConversationState = {
+            "messages": [{"role": "user", "content": req.message}],
+            "session_id": session_id,
+            "language": req.language,
+            "voice_enabled": req.voice_enabled,
+            "authenticated": False,
+            "ptp_logged": False,
+            "escalation_required": False,
+            "negotiation_rounds": 0,
+            "token_usage": 0,
+            "tool_call_count": 0,
+            "hallucination_flags": 0,
+        }
+        # If loan_id provided, pre-populate
+        if req.loan_id:
+            initial_state["customer_data"] = {"loan_id": req.loan_id}
 
-    result = graph.invoke(initial_state, config=config)
+        result = graph.invoke(initial_state, config=config)
 
     duration = time.time() - start
     CONVERSATION_DURATION.observe(duration)
@@ -162,7 +174,19 @@ async def transcribe_voice(audio: UploadFile = File(...), language: str = "hi-IN
     """
     audio_bytes = await audio.read()
     client = get_sarvam_client()
-    transcript = await client.speech_to_text(audio_bytes, language=language)
+    try:
+        transcript = await client.speech_to_text(
+            audio_bytes,
+            language=language,
+            filename=audio.filename or "audio.webm",
+            content_type=audio.content_type or "audio/webm",
+        )
+    except Exception as exc:
+        # Always return JSON so the frontend can parse the error message.
+        return JSONResponse(
+            status_code=502,
+            content={"transcript": "", "error": str(exc)},
+        )
     return {"transcript": transcript, "language": language}
 
 
@@ -201,11 +225,27 @@ class TTSRequest(BaseModel):
 
 @app.post("/tts")
 async def text_to_speech(req: TTSRequest):
-    """Convert text to Hindi speech via ElevenLabs (MP3 bytes)."""
-    from backend.voice.elevenlabs_voice import get_elevenlabs_client
-    client = get_elevenlabs_client()
-    audio_bytes = await client.text_to_speech(req.text)
-    return Response(content=audio_bytes, media_type="audio/mpeg")
+    """Convert text to Hindi speech via Sarvam AI Bulbul v2 (WAV bytes).
+
+    Sarvam's bulbul model is purpose-built for Indian languages, so Hindi
+    sounds far more natural than English premade voices. Falls back to
+    ElevenLabs if Sarvam fails.
+    """
+    try:
+        client = get_sarvam_client()
+        audio_bytes = await client.text_to_speech(req.text, language=req.language)
+        return Response(content=audio_bytes, media_type="audio/wav")
+    except Exception as sarvam_exc:
+        # Fallback to ElevenLabs so Play still works if Sarvam is unavailable.
+        try:
+            from backend.voice.elevenlabs_voice import get_elevenlabs_client
+            audio_bytes = await get_elevenlabs_client().text_to_speech(req.text)
+            return Response(content=audio_bytes, media_type="audio/mpeg")
+        except Exception as eleven_exc:
+            return JSONResponse(
+                status_code=502,
+                content={"error": f"Sarvam: {sarvam_exc} | ElevenLabs: {eleven_exc}"},
+            )
 
 
 # ── Part 10: Multi-Agent endpoint ─────────────────────────────────────────────

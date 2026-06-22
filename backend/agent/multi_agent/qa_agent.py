@@ -36,7 +36,7 @@ settings = get_settings()
 
 def _llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         google_api_key=settings.google_api_key,
         max_output_tokens=512,
         temperature=0.1,

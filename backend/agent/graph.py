@@ -49,11 +49,35 @@ def route_after_tool(state: ConversationState) -> str:
     return "knowledge_retrieval"
 
 
+# Borrower-acceptance signals (Hindi / Hinglish / English)
+_AGREE_KEYWORDS = (
+    "haan", "हाँ", "हां", "ठीक", "theek", " theek", "ok", "okay", "yes", "yep",
+    "राज़ी", "razi", "agree", "करूँगा", "करूंगा", "करुंगा", "दूँगा", "दूंगा",
+    "दे दूँगा", "पक्का", "pakka", "manjoor", "मंजूर", "सहमत", "deal", "done",
+    "chalega", "चलेगा", "kar dunga", "bhar dunga", "भर दूंगा",
+)
+
+
 def route_after_negotiation(state: ConversationState) -> str:
-    """After negotiation: resolve if agreement, escalate if stuck."""
+    """After the borrower replies to an offer:
+       - explicit acceptance  → resolution (log PTP / settlement)
+       - 3 rounds exhausted    → escalation
+       - otherwise             → another negotiation round
+    """
     if state.get("escalation_required"):
         return "escalation"
-    return "resolution"
+
+    last_user = next(
+        (m["content"] for m in reversed(state.get("messages", [])) if m.get("role") == "user"),
+        "",
+    ).lower()
+    if any(k in last_user for k in _AGREE_KEYWORDS):
+        return "resolution"
+
+    if state.get("negotiation_rounds", 0) >= 3:
+        return "escalation"
+
+    return "negotiation"
 
 
 def route_after_resolution(state: ConversationState) -> str:
@@ -128,6 +152,7 @@ def build_graph(checkpointer=None):
         {
             "resolution": AgentState.RESOLUTION,
             "escalation": AgentState.ESCALATION,
+            "negotiation": AgentState.NEGOTIATION,
         },
     )
     workflow.add_conditional_edges(
@@ -141,9 +166,15 @@ def build_graph(checkpointer=None):
         {"follow_up": AgentState.FOLLOW_UP},
     )
 
+    # Pause AFTER negotiation so the agent delivers its offer and waits for the
+    # borrower's reply (turn-based conversation) instead of running the whole
+    # pipeline to follow_up on every call.
     if checkpointer:
-        return workflow.compile(checkpointer=checkpointer)
-    return workflow.compile()
+        return workflow.compile(
+            checkpointer=checkpointer,
+            interrupt_after=[AgentState.NEGOTIATION],
+        )
+    return workflow.compile(interrupt_after=[AgentState.NEGOTIATION])
 
 
 # ── Singleton with SQLite checkpointing ──────────────────────────────────────

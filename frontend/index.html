@@ -538,6 +538,12 @@ let sessionId = crypto.randomUUID();
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
+let audioContext = null;
+let mediaStream = null;
+let recProcessor = null;
+let recSource = null;
+let pcmChunks = [];
+let recSampleRate = 16000;
 let metricsTimer = null;
 
 // ── Startup ─────────────────────────────────────────────────────────────────
@@ -779,15 +785,23 @@ function removeTyping(id) {
   if (el) el.remove();
 }
 
-// ── Voice Recording ───────────────────────────────────────────────────────────
+// ── Voice Recording (Web Audio → 16-bit PCM WAV) ───────────────────────────────
+// We capture raw PCM and encode WAV in-browser because Sarvam's STT expects
+// WAV/MP3 — MediaRecorder only produces webm/opus, which Sarvam rejects.
 async function startRecording() {
   if (isRecording) return;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.start(100);
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    recSampleRate = audioContext.sampleRate;
+    recSource = audioContext.createMediaStreamSource(mediaStream);
+    recProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    pcmChunks = [];
+    recProcessor.onaudioprocess = e => {
+      pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    recSource.connect(recProcessor);
+    recProcessor.connect(audioContext.destination);
     isRecording = true;
     document.getElementById('mic-btn').classList.add('recording');
     document.getElementById('rec-banner').classList.add('visible');
@@ -796,22 +810,58 @@ async function startRecording() {
   }
 }
 
+function encodeWav(chunks, sampleRate) {
+  let length = 0;
+  for (const c of chunks) length += c.length;
+  const pcm = new Float32Array(length);
+  let offset = 0;
+  for (const c of chunks) { pcm.set(c, offset); offset += c.length; }
+
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);          // PCM
+  view.setUint16(22, 1, true);          // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, pcm.length * 2, true);
+  let p = 44;
+  for (let i = 0; i < pcm.length; i++, p += 2) {
+    const s = Math.max(-1, Math.min(1, pcm[i]));
+    view.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
 async function stopRecording() {
-  if (!isRecording || !mediaRecorder) return;
+  if (!isRecording) return;
   isRecording = false;
   document.getElementById('mic-btn').classList.remove('recording');
   document.getElementById('rec-banner').classList.remove('visible');
   document.getElementById('transcribing-banner').classList.add('visible');
 
-  mediaRecorder.stop();
-  mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  // Tear down the audio graph
+  try { recProcessor.disconnect(); recSource.disconnect(); } catch (e) {}
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  if (audioContext) { await audioContext.close().catch(() => {}); }
 
-  await new Promise(r => mediaRecorder.addEventListener('stop', r, { once: true }));
-
-  const blob = new Blob(audioChunks, { type: 'audio/webm' });
+  const blob = encodeWav(pcmChunks, recSampleRate);
+  if (blob.size <= 44) {
+    document.getElementById('transcribing-banner').classList.remove('visible');
+    alert('No audio captured. Hold the mic button while speaking.');
+    return;
+  }
   const form = new FormData();
-  form.append('audio', blob, 'recording.webm');
-  const lang = document.getElementById('lang').value === 'hi' ? 'hi-IN' : 'hi-IN';
+  form.append('audio', blob, 'recording.wav');
+  const lang = 'hi-IN';
 
   try {
     const r = await fetch(`${API}/voice/transcribe?language=${lang}`, {
@@ -820,7 +870,7 @@ async function stopRecording() {
     const j = await r.json();
     document.getElementById('transcribing-banner').classList.remove('visible');
     if (j.transcript) sendMessage(j.transcript);
-    else alert('Could not transcribe audio. Please try again.');
+    else alert('Could not transcribe: ' + (j.error || 'unknown error'));
   } catch (err) {
     document.getElementById('transcribing-banner').classList.remove('visible');
     alert('Transcription failed: ' + err.message);

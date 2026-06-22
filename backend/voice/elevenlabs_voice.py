@@ -8,6 +8,10 @@ from backend.config import get_settings
 
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 
+# Built-in "premade" voice usable on the free tier (library/community voices
+# return 402 paid_plan_required for free accounts).
+FREE_TIER_FALLBACK_VOICE = "EXAVITQu4vr4xnSDxMaL"  # Sarah (multilingual-capable)
+
 
 class ElevenLabsClient:
     def __init__(self):
@@ -56,7 +60,18 @@ class ElevenLabsClient:
                 headers=self.headers,
                 json=payload,
             )
-            resp.raise_for_status()
+            # Free accounts can't use library/community voices (402). Retry once
+            # with a built-in premade voice so TTS still works.
+            if resp.status_code == 402 and vid != FREE_TIER_FALLBACK_VOICE:
+                resp = await client.post(
+                    f"{ELEVENLABS_BASE_URL}/text-to-speech/{FREE_TIER_FALLBACK_VOICE}",
+                    headers=self.headers,
+                    json=payload,
+                )
+            if resp.status_code >= 400:
+                raise RuntimeError(
+                    f"ElevenLabs TTS {resp.status_code}: {resp.text[:300]}"
+                )
             return resp.content
 
     async def get_voices(self) -> list[dict]:

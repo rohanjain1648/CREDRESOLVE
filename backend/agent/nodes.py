@@ -3,6 +3,7 @@ Part 1 + Part 9: LangGraph Node implementations
 Each function handles one state in the state machine.
 """
 import json
+import re
 import time
 import uuid
 from datetime import date, timedelta
@@ -38,10 +39,13 @@ settings = get_settings()
 
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         google_api_key=settings.google_api_key,
-        max_output_tokens=1024,
+        max_output_tokens=2048,
         temperature=0.3,
+        # Disable "thinking" so the whole token budget goes to the actual
+        # answer — otherwise reasoning tokens truncate the JSON response.
+        thinking_budget=0,
     )
 
 
@@ -96,12 +100,16 @@ def authentication_node(state: ConversationState) -> ConversationState:
     last_msg = state.get("messages", [])[-1] if state.get("messages") else {}
     user_text = last_msg.get("content", "")
 
-    # Extract loan ID from user message (simple heuristic for demo)
-    loan_id = None
-    for word in user_text.upper().split():
-        if word.startswith("LOAN"):
-            loan_id = word
-            break
+    # Prefer the Loan ID supplied by the UI / API (customer_data).
+    loan_id = (state.get("customer_data") or {}).get("loan_id")
+
+    # Otherwise extract it from the message — must look like LOAN<digits>,
+    # so the plain English word "loan" in a sentence is not mistaken for an ID.
+    if not loan_id:
+        for word in user_text.upper().split():
+            if re.fullmatch(r"LOAN\d+", word.strip(".,!?;:")):
+                loan_id = word.strip(".,!?;:")
+                break
 
     if not loan_id:
         # Ask again
@@ -285,6 +293,12 @@ def negotiation_node(state: ConversationState) -> ConversationState:
     policies = state.get("retrieved_policies", [])
     negotiation_round = state.get("negotiation_rounds", 0) + 1
 
+    # Most recent borrower utterance — so the pitch responds to what they said
+    last_user_msg = next(
+        (m["content"] for m in reversed(state.get("messages", [])) if m["role"] == "user"),
+        "",
+    )
+
     # Build negotiation prompt
     neg_prompt = get_negotiation_prompt(
         intent=intent,
@@ -302,6 +316,8 @@ def negotiation_node(state: ConversationState) -> ConversationState:
 
     system = get_system_prompt(state.get("language", "hi"))
     full_prompt = f"{context_prompt}\n\n{neg_prompt}"
+    if last_user_msg:
+        full_prompt += f"\n\nग्राहक का नवीनतम संदेश: \"{last_user_msg}\"\nइसका सीधे और संदर्भ के अनुसार उत्तर दें।"
 
     # Add tool result context
     if tool_results.get("settlement_options"):
@@ -318,18 +334,41 @@ def negotiation_node(state: ConversationState) -> ConversationState:
         system=system,
     )
 
-    # Parse JSON negotiation response
+    # Parse JSON negotiation response (robust: strip ``` fences, extract the
+    # first {...} block, and fall back to a generated Hindi pitch so the
+    # borrower never sees raw JSON).
     escalate = False
     proposed_amount = None
     proposed_date = None
-    try:
-        parsed = json.loads(response.strip().strip("```json").strip("```"))
-        response_text = parsed.get("hindi_pitch", response)
-        proposed_amount = parsed.get("proposed_amount")
-        proposed_date = parsed.get("proposed_date")
-        escalate = bool(parsed.get("escalate_reason"))
-    except Exception:
-        response_text = response
+    parsed = {}
+    cleaned = re.sub(r"^```(?:json)?|```$", "", response.strip(), flags=re.MULTILINE).strip()
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+        except Exception:
+            parsed = {}
+
+    proposed_amount = parsed.get("proposed_amount")
+    proposed_date = parsed.get("proposed_date")
+    escalate = bool(parsed.get("escalate_reason"))
+    response_text = (parsed.get("hindi_pitch") or "").strip()
+
+    if not response_text:
+        # Build a sensible Hindi pitch from whatever structured data we have.
+        amt = proposed_amount or customer.get("outstanding_amount", 0)
+        if proposed_date:
+            response_text = (
+                f"{customer.get('name', '')} जी, आपकी स्थिति को देखते हुए हम "
+                f"₹{amt:,.0f} का भुगतान {proposed_date} तक का प्रस्ताव देते हैं। "
+                "क्या यह आपके लिए ठीक रहेगा?"
+            )
+        else:
+            response_text = (
+                f"{customer.get('name', '')} जी, आपके बकाया ₹{amt:,.0f} के लिए "
+                "हमारे पास कुछ सुविधाजनक विकल्प हैं। "
+                "कृपया बताएं कि आप कितनी राशि और किस तारीख तक भुगतान कर सकते हैं?"
+            )
 
     return {
         **state,
@@ -456,14 +495,11 @@ def follow_up_node(state: ConversationState) -> ConversationState:
     )
     update_customer_notes.invoke({"loan_id": customer.get("loan_id", ""), "note": note})
 
-    text_hi = (
-        "आपसे बात करके अच्छा लगा। यदि आपको कोई सहायता चाहिए, "
-        "तो हमारे helpline 1800-XXX-XXXX पर कॉल करें। "
-        "धन्यवाद और आपका दिन शुभ हो!"
-    )
-
+    # NOTE: follow_up is a bookkeeping step that runs at the END of a resolved or
+    # escalated turn. It must NOT append a user-facing farewell, otherwise that
+    # farewell overwrites the real reply (resolution / escalation message) on
+    # every turn. Logging only — no message emitted.
     return {
         **state,
         "current_state": AgentState.FOLLOW_UP,
-        "messages": [{"role": "assistant", "content": text_hi}],
     }

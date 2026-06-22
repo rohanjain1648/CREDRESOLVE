@@ -135,5 +135,13 @@ chroma_db/
 vector_store.pkl
 model_cache/
 *.db
+*.db-shm
+*.db-wal
 langgraph_checkpoints.db
 langgraph_ma_checkpoints.db
+
+# Logs / scratch output (generated at runtime)
+*.log
+server.log
+server.err.log
+uv_*.txt
