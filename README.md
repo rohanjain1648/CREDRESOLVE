@@ -3,6 +3,11 @@
 > **An end-to-end agentic AI system** — Hindi Debt Collection Officer powered by  
 > LangGraph · Multi-Agent Supervisor · ChromaDB RAG · Sarvam AI Voice · Gemini 2.5 Flash · FastAPI · Prometheus
 
+## 🔗 Links
+
+- **🚀 Live Demo:** https://credresolve-production.up.railway.app/
+- **📓 NotebookLM (project notebook):** https://notebooklm.google.com/notebook/7d9da0a3-341a-4a8f-9bf5-71bb8967a1a4
+
 ---
 
 ## Table of Contents
